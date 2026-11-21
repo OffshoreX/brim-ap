@@ -35,7 +35,9 @@ vendorName, invoiceNumber, invoiceDate (YYYY-MM-DD), dueDate (YYYY-MM-DD or null
 lines [{description, quantity, unitPrice, amount}], taxes [{label, code, amount}], total,
 poNumber (or null), bankDetails (or null), language (ISO code like "en" or "fr").
 Every money value (unitPrice, amount, total) is a plain decimal string such as "1234.50": no currency symbol, no thousands separator.
-If a field is not on the invoice use null. Never invent values.`;
+If a field is not on the invoice use null. Never invent values.
+For each line, quantity is a decimal string; use "1" when the invoice shows no quantity (flat services). If a line has no unit price use its amount.
+For each tax, code is the tax code shown (for example GST, HST, QST, PST) or "" if none is shown. A credit note has negative amounts.`;
 
 // Decimal string -> integer cents using string/integer math only (no floats).
 export function toCents(v: unknown): number {
@@ -81,11 +83,18 @@ export function validateInvoice(raw: unknown): ExtractedInvoice {
     dueDate: r.dueDate == null ? null : date(r.dueDate, "dueDate"),
     currency: r.currency,
     lines: lines.map((l) => {
-      const quantity = str(l.quantity, "quantity");
-      if (!/^\d+(\.\d+)?$/.test(quantity)) throw new Error("bad quantity");
-      return { description: str(l.description, "description"), quantity, unitPriceCents: toCents(l.unitPrice), amountCents: toCents(l.amount) };
+      // Flat service lines often show no quantity: that means 1, not an error.
+      const q = l.quantity == null || l.quantity === "" ? "1" : String(l.quantity).trim();
+      if (!/^\d+(\.\d+)?$/.test(q)) throw new Error("bad quantity");
+      // No unit price on the invoice: the line amount is the price of one unit.
+      const unitPrice = l.unitPrice == null || l.unitPrice === "" ? l.amount : l.unitPrice;
+      return { description: str(l.description, "description"), quantity: q, unitPriceCents: toCents(unitPrice), amountCents: toCents(l.amount) };
     }),
-    taxes: arr(r.taxes, "taxes").map((t) => ({ label: str(t.label, "tax label"), code: str(t.code, "tax code"), amountCents: toCents(t.amount) })),
+    taxes: arr(r.taxes ?? [], "taxes").map((t) => ({
+      label: optStr(t.label, "tax label") ?? optStr(t.code, "tax code") ?? "Tax",
+      code: optStr(t.code, "tax code") ?? "",
+      amountCents: toCents(t.amount),
+    })),
     totalCents: toCents(r.total),
     poNumber: optStr(r.poNumber, "poNumber"),
     bankDetails: optStr(r.bankDetails, "bankDetails"),
@@ -106,10 +115,20 @@ export async function extractInvoice(
     // Cache first: the same bytes never reach the API twice, and need no key.
     const hash = createHash("sha256").update(fileBytes).digest("hex");
     const cacheFile = path.join(opts.cacheDir ?? path.join(process.cwd(), "data", "extract-cache"), `${hash}.json`);
+    let cachedRaw: unknown;
     try {
-      return { status: "ok", invoice: validateInvoice(JSON.parse(fs.readFileSync(cacheFile, "utf8"))), cached: true };
+      cachedRaw = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
     } catch {
-      // miss or unreadable/invalid cache entry: fall through and ask the model
+      // no cache entry (or unreadable): ask the model
+    }
+    if (cachedRaw !== undefined) {
+      try {
+        return { status: "ok", invoice: validateInvoice(cachedRaw), cached: true };
+      } catch (e) {
+        // The saved model answer fails today's checks. Do not pay for the same file again
+        // unless asked (EXTRACT_RETRY=1); fixing the checks re-validates it for free.
+        if (process.env.EXTRACT_RETRY !== "1") return review(`cached answer invalid: ${e instanceof Error ? e.message : "unknown"}`);
+      }
     }
 
     const key = process.env.ANTHROPIC_API_KEY;
@@ -142,10 +161,10 @@ export async function extractInvoice(
     } catch {
       return review("model output was not valid JSON");
     }
-    const invoice = validateInvoice(parsed);
-
+    // Save the raw model JSON before checking it, so a stricter or fixed check never costs another API call.
     fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-    fs.writeFileSync(cacheFile, JSON.stringify(parsed)); // raw model JSON, re-validated on every read
+    fs.writeFileSync(cacheFile, JSON.stringify(parsed));
+    const invoice = validateInvoice(parsed);
     return { status: "ok", invoice, cached: false };
   } catch (e) {
     // reason never includes the key: it only ever lives in the request header
