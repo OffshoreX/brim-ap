@@ -36,7 +36,7 @@ function addVendor(opts: { status?: string; requiresPo?: boolean; currency?: "CA
   const name = vendorName();
   const [i, t, a] = [digits(3), digits(5), digits(9)];
   const id = Number(db.prepare(
-    "INSERT INTO vendors (name, status, requires_po, currency, province_or_state, bank_institution, bank_transit, bank_account, payment_terms_days, onboarded_at) VALUES (?,?,?,?,?,?,?,?,30,'2020-01-01')"
+    "INSERT INTO vendors (name, status, requires_po, currency, province_or_state, bank_institution, bank_transit, bank_account, payment_terms_days, onboarded_at, default_gl_account) VALUES (?,?,?,?,?,?,?,?,30,'2020-01-01','5010')"
   ).run(name, opts.status ?? "active", opts.requiresPo ? 1 : 0, opts.currency ?? "CAD", opts.province ?? "ON", i, t, a).lastInsertRowid);
   if (opts.unverifiedChange) db.prepare("INSERT INTO vendor_bank_changes (vendor_id, changed_at, request_channel, verified_by_callback, old_account_last4, new_account_last4) VALUES (?,?,?,?,?,?)").run(id, "2025-03-01", "email_request", 0, "1111", a.slice(-4));
   const p = opts.prior ?? {};
@@ -78,6 +78,7 @@ beforeEach(() => {
   process.env.UPLOAD_DIR = uploads;
   const db = getDb();
   db.exec(`
+    INSERT INTO gl_accounts (id,code,name) VALUES (5010,'5010','Freight');
     INSERT INTO users (id,name,role,approval_limit_cents,province,department_id,manager_id,status,delegate_user_id) VALUES
       (1,'Emp','employee',0,'ON',NULL,NULL,'active',NULL),(3,'Mgr','approver',500000,'ON',NULL,NULL,'on_leave',7),
       (4,'Aud','auditor',0,'ON',NULL,NULL,'active',NULL),(5,'Fin','finance_manager',0,'ON',NULL,NULL,'active',NULL),(7,'Dele','approver',500000,'ON',NULL,NULL,'active',NULL);

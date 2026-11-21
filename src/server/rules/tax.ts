@@ -19,6 +19,14 @@ const PROVINCE_CODES: Record<string, { gstHst: string; pstQst: string | null }> 
 };
 const NO_TAX = ['EXEMPT', 'FOREIGN']; // valid in every province, carry no tax
 
+// The codes a line must carry in a province (same table checkTax judges by); null = no rules for that province.
+export function requiredTaxCodes(province: string, lineType: 'goods' | 'services', taxCodes: TaxCodeRate[]): { gstHst: string; pstQst: string | null } | null {
+  const rule = PROVINCE_CODES[province];
+  if (!rule) return null;
+  const goodsOnly = rule.pstQst !== null && taxCodes.find((t) => t.code === rule.pstQst)?.appliesTo === 'goods' && lineType === 'services';
+  return { gstHst: rule.gstHst, pstQst: goodsOnly ? null : rule.pstQst };
+}
+
 // Exact decimal string ("0.09975") to rateE5 with no float math.
 export function rateToE5(rate: string): number {
   const [whole, frac = ''] = rate.split('.');

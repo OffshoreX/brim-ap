@@ -6,6 +6,20 @@ import path from "node:path";
 export function applySchema(d: Database.Database, dir = path.join(process.cwd(), "db")) {
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql") && f !== "schema.sql").sort();
   for (const f of ["schema.sql", ...files]) d.exec(fs.readFileSync(path.join(dir, f), "utf8"));
+  addMissingColumns(d);
+}
+
+// CREATE TABLE IF NOT EXISTS never alters an existing file, so columns added later are listed here.
+const ADDED_COLUMNS: [string, string, string][] = [
+  ["invoice_lines", "coding_source", "TEXT"],
+  ["invoice_lines", "coding_reason", "TEXT"],
+  ["invoice_lines", "coding_needed", "INTEGER NOT NULL DEFAULT 0 CHECK (coding_needed IN (0,1))"],
+];
+function addMissingColumns(d: Database.Database) {
+  for (const [table, col, def] of ADDED_COLUMNS) {
+    const cols = d.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (cols.length && !cols.some((c) => c.name === col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+  }
 }
 
 let db: Database.Database | undefined;
