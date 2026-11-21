@@ -91,6 +91,14 @@ test("changed bank details go to needs_review with a bank flag", async () => {
   expect(codes(id)).toEqual(expect.arrayContaining(["bank_differs_from_latest", "bank_never_seen"]));
 });
 
+test("invoice with a still-pending new bank account is flagged as unverified", async () => {
+  getDb().prepare("INSERT INTO vendor_bank_changes (vendor_id,changed_at,old_account_last4,new_account_last4,status) VALUES (1,'2026-11-01','0011','7777','pending')").run();
+  ok({ bankDetails: "999999 77777" });
+  const id = makeInvoice();
+  expect((await (await run(id)).json()).status).toBe("needs_review");
+  expect(codes(id)).toContain("bank_change_unverified");
+});
+
 test("extraction failure goes to needs_review and nothing is guessed", async () => {
   extractMock.mockResolvedValue({ status: "needs_review", reason: "model output was not valid JSON" });
   const id = makeInvoice();

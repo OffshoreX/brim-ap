@@ -120,10 +120,16 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
         // The dataset keeps only the last 4 digits of each account, so that is what gets compared.
         // The account before the first change is the starting point; each change row is a later record.
         const changes = db
-          .prepare("SELECT old_account_last4, new_account_last4, changed_at FROM vendor_bank_changes WHERE vendor_id = ? ORDER BY changed_at")
+          .prepare("SELECT old_account_last4, new_account_last4, changed_at FROM vendor_bank_changes WHERE vendor_id = ? AND status = 'applied' ORDER BY changed_at")
           .all(vendorId) as { old_account_last4: string | null; new_account_last4: string | null; changed_at: string }[];
         const history = changes.map((c) => ({ accountNumber: c.new_account_last4 ?? "", since: c.changed_at.slice(0, 10) }));
         if (changes[0]?.old_account_last4) history.unshift({ accountNumber: changes[0].old_account_last4, since: "0000-01-01" });
+        // A request still waiting for its callback is not on file yet: say so, so a clerk knows why.
+        const invLast4 = x.bankDetails.replace(/\D/g, "").slice(-4);
+        const pending = db
+          .prepare("SELECT 1 FROM vendor_bank_changes WHERE vendor_id = ? AND status = 'pending' AND new_account_last4 = ?")
+          .get(vendorId, invLast4);
+        if (pending) flags.push(error("bank_change_unverified", "Vendor bank change not yet verified by callback"));
         flags.push(
           ...checkBankChange({ accountNumber: x.bankDetails.replace(/\D/g, "").slice(-4) }, history, new Date().toISOString().slice(0, 10))
         );
