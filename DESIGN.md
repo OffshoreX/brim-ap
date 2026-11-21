@@ -12,7 +12,8 @@ colors:
   row-hover: "#eef3fb"
   accent: "#1d4ed8"
   accent-ink: "#ffffff"
-  focus-ring: "#7aa2ff"
+  focus-ring: "#1d4ed8"
+  field-border: "#7d8797"
   nav: "#111827"
   nav-ink: "#e5eaf3"
   nav-on: "#374151"
@@ -155,7 +156,8 @@ A cool-grey neutral field, one electric-but-sober blue, and four status families
 - **White Card** (#ffffff): panels, cards, table body, inputs.
 - **Header Mist** (#e9edf2), **Zebra Whisper** (#f8fafc), **Row Hover Blue** (#eef3fb): table header, alternate rows, hover row.
 - **Harbour Night** (#111827): the top bar. **Nav Slate** (#374151) marks the active or hovered nav item. **Nav Ink** (#e5eaf3) is nav text.
-- **Focus Periwinkle** (#7aa2ff): focus ring, 3px, offset 2px.
+- **Focus Blue** (#1d4ed8, same value as Ledger Blue): focus ring, 3px, offset 2px. 6:1 on the page, so it meets the 3:1 non-text rule (the old periwinkle did not). On the dark top bar the ring is white.
+- **Field Edge** (#7d8797): border of inputs, selects and buttons. 3.6:1 on white. Hairline Grey stays for dividers, cards and tables only.
 
 ### Status
 - **Cleared Green** (#14532d on #e8f8ee, line #86d3a0): approved, scheduled, paid; success toasts.
@@ -221,7 +223,7 @@ Gently rounded and consistent: 8px for containers (cards, panels, table wrappers
 - **Shape:** 6px radius, min height 2.25rem (36px) everywhere, including toast and top-bar buttons, padding 4px 12px, weight 600.
 - **Primary (default `button`):** Ledger Blue fill, white text; hover brightens slightly.
 - **Secondary (`.secondary`):** white fill, blue text and blue border; hover tints to Row Hover Blue.
-- **Focus:** 3px Focus Periwinkle outline, 2px offset; border turns accent.
+- **Focus:** 3px Focus Blue outline, 2px offset; border turns accent.
 - **Disabled:** 55% opacity, not-allowed cursor. While a form is busy the cursor shows progress.
 - In the top bar, secondary buttons turn transparent with white text.
 
@@ -234,7 +236,7 @@ Gently rounded and consistent: 8px for containers (cards, panels, table wrappers
 - **Padding:** 12px 16px for stat cards; 16px for panels. Stat cards show a large tabular figure over a label; clickable ones (`.cards.big`) border and tint blue on hover.
 
 ### Inputs / Fields
-- **Style:** white fill, 1px hairline, 6px radius, 36px high. Hover darkens border to muted; focus shows the ring and blue border.
+- **Style:** white fill, 1px Field Edge border, 6px radius, 36px high. Hover darkens border to muted; focus shows the ring and blue border.
 - **Read-only facts** use a two-column definition list: muted term left, right-aligned tabular value.
 
 ### Tables
@@ -247,7 +249,7 @@ Gently rounded and consistent: 8px for containers (cards, panels, table wrappers
 Panel with a 6px left edge, listing each flag as a chip plus its plain-text reason. This is the visual form of the product promise: the reason sits next to the flag, never in a tooltip. The panel takes the color of its worst flag: red (heading "Blocked") when any flag has severity error, amber when the worst is a warning, neutral blue when all are informational.
 
 ### Money Actions
-Release, approve and reject are never one bare click. Releasing money shows an inline confirmation with the amount, currency, payee and method before it runs, locks the control while the request is in flight, and reports the result next to the control that was clicked. Success messages for money stay on screen until dismissed.
+Every action locks its control while the request is in flight and reports the result next to the control that was clicked. Actions that move money or change who gets paid (release, reject, a bank-change callback) show an inline confirmation first, with amount, currency, payee and method where they apply. Approve is a single click with the lock and a fresh Idempotency-Key, because it is routine and the server refuses a repeat. Success messages for money stay on screen until dismissed.
 
 ### Feedback
 - **Error:** persistent red banner with left edge; stays until fixed. **Toast:** green, bottom-right, with a dismiss button. **Empty:** dashed box, muted text. **Skeleton:** shimmering rows, still under reduced-motion.
@@ -255,7 +257,7 @@ Release, approve and reject are never one bare click. Releasing money shows an i
 ### Charts
 Horizontal bar charts in inline SVG, no chart library (`Charts.tsx`). A `figure` 40rem max, with a caption, three hairline gridlines (0, half, max) with money ticks, category labels right-aligned on the left (wide enough to show the full name, wrapped to two lines when long, never truncated and never moved into a `<title>`), 16px bars, each bar's value printed in semibold text just past its end (dark text beside light fills), 12px minimum chart text, money ticks carry the currency, an italic muted axis title for each axis, and a legend only when there is more than one series. The SVG has an `aria-label` that reads out every row and value. Fills come from Chart Series above.
 
-**Bar-grow animation (the one allowed chart motion; not yet implemented in code, so this is the spec).** On first render only, each bar's width grows from 0 to its value over 250ms with `ease-out`, with no stagger. No loop, no hover, no replay on data refresh. Under `prefers-reduced-motion: reduce` bars render at full width at once. Bar value text and gridlines are always visible and do not animate, so the figures are readable during the 250ms. Bars must keep the 2px minimum width for non-zero values. Implement it in `ui.css` as a CSS animation on the bar `rect` (`transform: scaleX` from the label edge, `transform-origin` at the bar's left), not in JavaScript, and wrap it in the reduced-motion guard.
+**Bar-grow animation (the one allowed chart motion; implemented in `ui.css`).** On first render only, each bar's width grows from 0 to its value over 250ms with `ease-out`, with no stagger. No loop, no hover, no replay on data refresh. Under `prefers-reduced-motion: reduce` bars render at full width at once. Bar value text and gridlines are always visible and do not animate, so the figures are readable during the 250ms. Bars must keep the 2px minimum width for non-zero values. It is a CSS animation on the bar `rect` (`transform: scaleX` from the label edge, `transform-origin` at the bar's left), not in JavaScript, and wrap it in the reduced-motion guard.
 
 The SVG classes `.tick` and `.cat` get their own rules in `ui.css` (axis tick text and category label text); until then they inherit `.chart text`.
 
