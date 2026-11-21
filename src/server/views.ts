@@ -145,19 +145,21 @@ export function invoiceTrail(invoiceId: number) {
   if (!db.prepare("SELECT 1 FROM invoices WHERE id = ?").get(invoiceId)) throw new ViewError(404, "Invoice not found");
   const rows = db
     .prepare(
-      `SELECT id, at, actor_id, action, entity, entity_id, before, after FROM audit_log
+      `SELECT ${AUDIT_COLS} FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
        WHERE (entity = 'invoice' AND entity_id = @id)
           OR (entity = 'payment' AND entity_id IN (SELECT CAST(id AS TEXT) FROM payments WHERE invoice_id = @n))
-       ORDER BY at, id`
+       ORDER BY at, a.id`
     )
     .all({ id: String(invoiceId), n: invoiceId });
   return rows.map(auditRow);
 }
 
-type AuditRaw = { id: number; at: string; actor_id: number | null; action: string; entity: string; entity_id: string | null; before: string | null; after: string | null };
+// actor_name is NULL for system rows (no actor) and for a deleted user; both print as "System" rather than a bare id.
+const AUDIT_COLS = "a.id, a.at, a.actor_id, u.name AS actor_name, a.action, a.entity, a.entity_id, a.before, a.after";
+type AuditRaw = { id: number; at: string; actor_id: number | null; actor_name: string | null; action: string; entity: string; entity_id: string | null; before: string | null; after: string | null };
 const auditRow = (r: unknown) => {
   const a = r as AuditRaw;
-  return { id: a.id, at: a.at, actorId: a.actor_id, action: a.action, entity: a.entity, entityId: a.entity_id, before: parseJson(a.before), after: parseJson(a.after) };
+  return { id: a.id, at: a.at, actorId: a.actor_id, actorName: a.actor_name ?? "System", action: a.action, entity: a.entity, entityId: a.entity_id, before: parseJson(a.before), after: parseJson(a.after) };
 };
 
 export type AuditFilter = { entity?: string; actor?: number; from?: string; to?: string; limit?: number; offset?: number };
@@ -183,7 +185,7 @@ export function auditLog(f: AuditFilter) {
   const w = auditWhere(f);
   const limit = Math.min(f.limit ?? DEFAULT_PAGE.limit, MAX_LIMIT);
   const rows = getDb()
-    .prepare(`SELECT id, at, actor_id, action, entity, entity_id, before, after FROM audit_log ${w.sql} ORDER BY at DESC, id DESC LIMIT ? OFFSET ?`)
+    .prepare(`SELECT ${AUDIT_COLS} FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id ${w.sql} ORDER BY at DESC, a.id DESC LIMIT ? OFFSET ?`)
     .all(...w.args, limit, f.offset ?? 0);
   return rows.map(auditRow);
 }

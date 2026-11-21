@@ -187,3 +187,12 @@ test("detail: top-level vendor and money fields, flags ordered by severity, name
   expect(d.approvalChain.at(-1).delegatedFromName).toBe("Fin");
   expect(d.payments[0]).toMatchObject({ methodLabel: "EFT", statusLabel: "Scheduled" });
 });
+
+test("trail and audit rows carry actorName; no actor prints System", async () => {
+  getDb().prepare("INSERT INTO audit_log (actor_id,action,entity,entity_id) VALUES (3,'payment.prepare','payment','1'),(NULL,'invoice.auto','invoice','1')").run();
+  const rows = await (await get(trail, 7)).json();
+  expect(rows.map((r: { actorName: string }) => r.actorName)).toEqual(expect.arrayContaining(["Clerk", "System"]));
+  const all = await (await list(audit, 7)).json();
+  expect(all.every((r: { actorName: string; actorId: number | null }) => typeof r.actorName === "string")).toBe(true);
+  expect(all.find((r: { actorId: number | null }) => r.actorId === 3).actorName).toBe("Clerk");
+});
