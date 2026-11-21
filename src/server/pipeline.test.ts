@@ -39,7 +39,12 @@ beforeEach(() => {
   db.exec(`
     INSERT INTO users (id,name,role,approval_limit_cents) VALUES
       (1,'Emp','employee',0),(2,'Clerk','ap_clerk',0),(3,'Appr','approver',100000000),(4,'Aud','auditor',0);
-    INSERT INTO approval_rules (min_cents,max_cents,approver_role) VALUES (0,1000000000,'approver');
+    INSERT INTO departments (id,name,manager_user_id) VALUES (1,'Ops',3);
+    UPDATE users SET department_id = 1, manager_id = 3 WHERE id = 1;
+    INSERT INTO approval_policies (ext_id,rule_type,condition,required) VALUES
+      ('P02','approval','Invoice total over $10,000 CAD','dept_manager > finance_manager'),
+      ('P03','approval','Invoice total over $50,000 CAD','dept_manager > finance_manager > controller_admin'),
+      ('P04','approval','Invoice total over $250,000 CAD','dept_manager > finance_manager > controller_admin > cfo');
     INSERT INTO vendors (id,name) VALUES (1,'ACME Freight Inc');
     INSERT INTO vendor_bank_changes (vendor_id,changed_at,old_account_last4,new_account_last4) VALUES (1,'2025-01-01','9999','0011');
   `);
@@ -59,7 +64,7 @@ const run = (id: number, user: number | null = CLERK) =>
 const row = (id: number) => getDb().prepare("SELECT * FROM invoices WHERE id = ?").get(id) as Record<string, unknown>;
 const codes = (id: number) => (JSON.parse(row(id).flags as string) as { code: string }[]).map((f) => f.code);
 const actions = (id: number) =>
-  (getDb().prepare("SELECT action FROM audit_log WHERE entity_id = ? ORDER BY id").all(String(id)) as { action: string }[]).map((a) => a.action);
+  (getDb().prepare("SELECT action FROM audit_log WHERE entity = 'invoice' AND entity_id = ? ORDER BY id").all(String(id)) as { action: string }[]).map((a) => a.action);
 const ok = (invoice: Partial<ExtractedInvoice> = {}) =>
   extractMock.mockResolvedValue({ status: "ok", invoice: { ...good, ...invoice }, cached: false });
 
@@ -72,6 +77,9 @@ test("clean invoice is saved, routed to the approver and audited at every step",
   expect(row(id)).toMatchObject({ status: "pending_approval", vendor_id: 1, invoice_number: "INV-100", total_cents: 10500, currency: "CAD" });
   expect(getDb().prepare("SELECT COUNT(*) AS n FROM invoice_lines WHERE invoice_id = ?").get(id)).toEqual({ n: 1 });
   expect(actions(id)).toEqual(["invoice.extracted", "invoice.coding_suggestion", "invoice.routed", "invoice.checks", "invoice.status"]);
+  expect(getDb().prepare("SELECT step_no, role, user_id, status FROM approval_steps WHERE invoice_id = ?").all(id)).toEqual([
+    { step_no: 1, role: "dept_manager", user_id: 3, status: "pending" },
+  ]);
 });
 
 test("same vendor and invoice number as an earlier invoice goes to needs_review with a duplicate flag", async () => {
@@ -127,10 +135,11 @@ test("unknown vendor and a total that does not add up are flagged", async () => 
   expect(codes(id)).toEqual(expect.arrayContaining(["vendor_unmatched", "TOTAL_MISMATCH"]));
 });
 
-test("no approver can cover the amount: needs_review with a routing flag", async () => {
+test("nobody can fill a step: needs_review with a routing flag and no stored chain", async () => {
   ok({ lines: [{ description: "Big", quantity: "1", unitPriceCents: 2_000_000_000, amountCents: 2_000_000_000 }], taxes: [], totalCents: 2_000_000_000 });
-  const id = makeInvoice();
+  const id = makeInvoice(); // over every threshold, but this world has no finance manager
   await run(id);
+  expect(getDb().prepare("SELECT COUNT(*) n FROM approval_steps").get()).toEqual({ n: 0 });
   expect(row(id).status).toBe("needs_review");
   expect(codes(id)).toContain("routing_failed");
 });

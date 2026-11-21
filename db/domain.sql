@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS tax_codes (
 -- flags is JSON text (list of reasons) so new checks need no schema change.
 -- extraction_json keeps the raw extractor output so a review can see what the model read.
 -- invoice_number is the vendor's own number (dataset vendor_invoice_number).
--- department is the name approval_rules match on; department_id is the real link.
+-- department is a free-text name; department_id is the real link (the approval chain uses the requester's department).
 CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY,
   ext_id TEXT UNIQUE,

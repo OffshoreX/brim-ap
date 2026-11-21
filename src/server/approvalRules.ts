@@ -1,91 +1,64 @@
-import { ROLES } from "@/contracts";
 import { getDb } from "./db";
 import { writeAudit } from "./audit";
-import type { ApprovalRule } from "./rules/types";
+import type { ChainThresholds } from "./rules/chain.types";
 
-export type RuleRow = {
-  id: number;
-  department: string | null;
-  min_cents: number;
-  max_cents: number;
-  approver_role: string;
-  active: number;
-};
-export type RuleInput = { department: string | null; min_cents: number; max_cents: number; approver_role: string; active: boolean };
+export type RuleRow = { id: number; policy_id: string | null; over_cents: number; extra_role: string };
 // Ready to send: routes only forward this to the client.
 export type RuleResult = { status: number; body: unknown };
 
 const err = (error: string, status = 400): RuleResult => ({ status, body: { error } });
-const get = (id: number) => getDb().prepare("SELECT * FROM approval_rules WHERE id = ?").get(id) as RuleRow | undefined;
+const all = () => getDb().prepare("SELECT * FROM approval_rules ORDER BY over_cents").all() as RuleRow[];
 
-// Returns the clean input, or an error message. Trust boundary: body is untrusted JSON.
-export function parseRule(body: unknown): RuleInput | string {
-  const b = (body ?? {}) as Record<string, unknown>;
-  const { department, min_cents: min, max_cents: max, approver_role: role, active = true } = b;
-  if (!Number.isInteger(min) || !Number.isInteger(max) || (min as number) < 0) return "min_cents and max_cents must be integer cents, min_cents >= 0";
-  if ((min as number) >= (max as number)) return "min_cents must be less than max_cents";
-  if (!ROLES.includes(role as never)) return "approver_role must be a valid role";
-  if (department != null && (typeof department !== "string" || !department.trim())) return "department must be a non-empty string or null";
-  if (typeof active !== "boolean") return "active must be a boolean";
-  return { department: (department as string | null | undefined)?.trim() ?? null, min_cents: min as number, max_cents: max as number, approver_role: role as string, active };
+// Reads the "Invoice total over $X" policies (P02 to P04 in the dataset) into the table. The policy text is
+// prose, so the amount is parsed out of the condition and the role is the last step of `required`.
+// Only runs when the table is empty, so an edited threshold is never overwritten.
+export function seedApprovalRules() {
+  const db = getDb();
+  if (db.prepare("SELECT 1 FROM approval_rules").get()) return;
+  const policies = db
+    .prepare("SELECT ext_id, condition, required FROM approval_policies WHERE rule_type = 'approval' AND condition LIKE 'Invoice total over %'")
+    .all() as { ext_id: string; condition: string; required: string | null }[];
+  db.transaction(() => {
+    for (const p of policies) {
+      const dollars = /over \$([\d,]+)/.exec(p.condition)?.[1];
+      const role = p.required?.split(">").pop()?.trim();
+      if (!dollars || !role) continue; // not a threshold row we understand; skipping beats guessing
+      const row = { policy_id: p.ext_id, over_cents: Number(dollars.replaceAll(",", "")) * 100, extra_role: role };
+      const res = db.prepare("INSERT OR IGNORE INTO approval_rules (policy_id, over_cents, extra_role) VALUES (?,?,?)").run(row.policy_id, row.over_cents, row.extra_role);
+      if (res.changes) writeAudit({ actorId: null, action: "approval_rule.seed", entity: "approval_rule", entityId: Number(res.lastInsertRowid), after: row });
+    }
+  })();
 }
 
-// Half-open ranges [a,b) and [c,d) overlap when a < d and c < b. Only active rules compete.
-function overlaps(r: RuleInput, ignoreId: number): boolean {
-  if (!r.active) return false;
-  return !!getDb()
-    .prepare(
-      `SELECT 1 FROM approval_rules WHERE active = 1 AND id != ? AND department IS ? AND min_cents < ? AND ? < max_cents`
-    )
-    .get(ignoreId, r.department, r.max_cents, r.min_cents);
+// What routeApprovalChain needs. Throws (so the invoice goes to needs_review) if a level is missing.
+export function loadThresholds(): ChainThresholds {
+  seedApprovalRules();
+  const over = (role: string) => {
+    const r = all().find((x) => x.extra_role === role);
+    if (!r) throw new Error(`approval chain: no threshold configured for ${role}`);
+    return r.over_cents;
+  };
+  return { financeOverCents: over("finance_manager"), controllerOverCents: over("controller_admin"), cfoOverCents: over("cfo") };
 }
 
-export const listRules = (): RuleResult => ({
-  status: 200,
-  body: { rules: getDb().prepare("SELECT * FROM approval_rules ORDER BY department, min_cents").all() },
-});
-
-export function createRule(actorId: number, body: unknown): RuleResult {
-  const r = parseRule(body);
-  if (typeof r === "string") return err(r);
-  if (overlaps(r, 0)) return err("range overlaps an active rule for this department");
-  const res = getDb()
-    .prepare("INSERT INTO approval_rules (department, min_cents, max_cents, approver_role, active) VALUES (?,?,?,?,?)")
-    .run(r.department, r.min_cents, r.max_cents, r.approver_role, r.active ? 1 : 0);
-  const after = get(Number(res.lastInsertRowid))!;
-  writeAudit({ actorId, action: "approval_rule.create", entity: "approval_rule", entityId: after.id, after });
-  return { status: 201, body: { rule: after } };
+export function listRules(): RuleResult {
+  seedApprovalRules();
+  return { status: 200, body: { rules: all() } };
 }
 
+// Only the amount is editable: the roles are the levels routeApprovalChain knows. Body is untrusted JSON.
 export function updateRule(actorId: number, id: number, body: unknown): RuleResult {
-  const before = get(id);
+  const before = all().find((r) => r.id === id);
   if (!before) return err("Rule not found", 404);
-  const r = parseRule(body);
-  if (typeof r === "string") return err(r);
-  if (overlaps(r, id)) return err("range overlaps an active rule for this department");
-  getDb()
-    .prepare("UPDATE approval_rules SET department=?, min_cents=?, max_cents=?, approver_role=?, active=? WHERE id=?")
-    .run(r.department, r.min_cents, r.max_cents, r.approver_role, r.active ? 1 : 0, id);
-  const after = get(id)!;
+  const over = (body as { over_cents?: unknown } | null)?.over_cents;
+  if (!Number.isSafeInteger(over) || (over as number) < 0) return err("over_cents must be an integer number of cents, >= 0");
+  // A higher level must never start below a lower one, or the chain would skip a step.
+  const next = all().map((r) => (r.id === id ? { ...r, over_cents: over as number } : r));
+  const at = (role: string) => next.find((r) => r.extra_role === role)?.over_cents ?? 0;
+  if (!(at("finance_manager") <= at("controller_admin") && at("controller_admin") <= at("cfo")))
+    return err("thresholds must rise: finance_manager <= controller_admin <= cfo");
+  getDb().prepare("UPDATE approval_rules SET over_cents = ? WHERE id = ?").run(over, id);
+  const after = all().find((r) => r.id === id)!;
   writeAudit({ actorId, action: "approval_rule.update", entity: "approval_rule", entityId: id, before, after });
   return { status: 200, body: { rule: after } };
-}
-
-export function deleteRule(actorId: number, id: number): RuleResult {
-  const before = get(id);
-  if (!before) return err("Rule not found", 404);
-  getDb().prepare("DELETE FROM approval_rules WHERE id = ?").run(id);
-  writeAudit({ actorId, action: "approval_rule.delete", entity: "approval_rule", entityId: id, before });
-  return { status: 200, body: { ok: true } };
-}
-
-// Feeds routeApproval from the database; inactive rules are never routed to.
-export function loadApprovalRules(): ApprovalRule[] {
-  const rows = getDb().prepare("SELECT * FROM approval_rules WHERE active = 1 ORDER BY min_cents").all() as RuleRow[];
-  return rows.map((r) => ({
-    minCents: r.min_cents,
-    maxCents: r.max_cents,
-    approverRole: r.approver_role,
-    ...(r.department === null ? {} : { department: r.department }),
-  }));
 }
