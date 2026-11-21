@@ -1,68 +1,83 @@
 import { describe, expect, it } from 'vitest';
-import { checkTax, expectedTaxCents } from './tax';
-import type { TaxCodeRate } from './tax.types';
+import { checkTax, expectedTaxCents, rateToE5, type TaxCodeRate, type TaxLine } from './tax';
 
-// Test data only: the rule itself knows no provinces or rates.
+// Test rates are parsed from the same decimal strings as tax_codes.csv; the rule knows no rates.
 const codes: TaxCodeRate[] = [
-  { code: 'ON13', province: 'ON', rateBps: 1300 },
-  { code: 'QC15', province: 'QC', rateBps: 1498 },
-  { code: 'ZERO', province: null, rateBps: 0 },
-  { code: 'FIVE', province: null, rateBps: 500 },
+  { code: 'HST13', rateE5: rateToE5('0.13'), appliesTo: 'all' },
+  { code: 'GST5', rateE5: rateToE5('0.05'), appliesTo: 'all' },
+  { code: 'PST7_BC', rateE5: rateToE5('0.07'), appliesTo: 'goods' },
+  { code: 'QST9975', rateE5: rateToE5('0.09975'), appliesTo: 'all' },
 ];
-const line = (amountCents: number, taxCode: string | null) => ({ amountCents, taxCode });
-const tax = (lineIndex: number, amountCents: number) => ({ lineIndex, amountCents });
-const found = (r: { code: string; lineIndex: number | null }[]) => r.map((f) => `${f.code}@${f.lineIndex}`);
+const ln = (amountCents: number, gstHstCode: string | null, pstQstCode: string | null = null, lineType: 'goods' | 'services' = 'services'): TaxLine => ({ amountCents, lineType, gstHstCode, pstQstCode });
+const ch = (gstHstCents: number, pstQstCents = 0) => ({ gstHstCents, pstQstCents });
+const codesOf = (r: { code: string }[]) => r.map((f) => f.code);
+
+describe('rateToE5 / expectedTaxCents', () => {
+  it('converts exactly', () => {
+    expect(rateToE5('0.09975')).toBe(9975);
+    expect(rateToE5('0.13')).toBe(13000);
+    expect(rateToE5('0')).toBe(0);
+  });
+  it('rounds half a cent away from zero, credit notes mirror', () => {
+    expect(expectedTaxCents(10, 5000)).toBe(1); // 0.5 -> 1
+    expect(expectedTaxCents(9, 5000)).toBe(0); // 0.45 -> 0
+    expect(expectedTaxCents(-10, 5000)).toBe(-1);
+  });
+});
 
 describe('checkTax', () => {
-  it('correct tax: no findings', () => {
-    expect(checkTax([line(10000, 'ON13')], [tax(0, 1300)], 'ON', codes)).toEqual([]);
+  it('ON: HST13', () => expect(checkTax([ln(10000, 'HST13')], ch(1300), 'ON', codes)).toEqual([]));
+  it('AB: GST5', () => expect(checkTax([ln(10000, 'GST5')], ch(500), 'AB', codes)).toEqual([]));
+  it('BC: GST5 + PST on goods', () => expect(checkTax([ln(10000, 'GST5', 'PST7_BC', 'goods')], ch(500, 700), 'BC', codes)).toEqual([]));
+  it('BC: services get GST only, no PST', () => expect(checkTax([ln(10000, 'GST5')], ch(500), 'BC', codes)).toEqual([]));
+  it('BC: mixed goods and services, PST only on the goods', () => {
+    expect(checkTax([ln(10000, 'GST5', 'PST7_BC', 'goods'), ln(20000, 'GST5')], ch(1500, 700), 'BC', codes)).toEqual([]);
   });
-  it('wrong province code', () => {
-    const r = checkTax([line(10000, 'QC15')], [tax(0, 1498)], 'ON', codes);
-    expect(found(r)).toEqual(['WRONG_PROVINCE_CODE@0']);
-    expect(r[0].message).toContain('QC');
+  it('BC: PST on a services line is flagged', () => {
+    expect(codesOf(checkTax([ln(10000, 'GST5', 'PST7_BC', 'services')], ch(500, 700), 'BC', codes))).toEqual(['PST_ON_SERVICES']);
   });
-  it('tax charged on zero-rated', () => {
-    expect(found(checkTax([line(10000, 'ZERO')], [tax(0, 500)], 'ON', codes))).toEqual(['TAX_ON_EXEMPT@0']);
+  it('QC: QST on the pre-tax amount', () => {
+    expect(checkTax([ln(10000, 'GST5', 'QST9975')], ch(500, 998), 'QC', codes)).toEqual([]); // 997.5 -> 998
   });
-  it('zero-rated with no tax is fine', () => {
-    expect(checkTax([line(10000, 'ZERO')], [], 'ON', codes)).toEqual([]);
+  it('QC: QST computed on the GST-inclusive amount is flagged', () => {
+    // 10500 * 9.975% = 1047.4 -> 1047
+    expect(codesOf(checkTax([ln(10000, 'GST5', 'QST9975')], ch(500, 1047), 'QC', codes))).toEqual(['QST_ON_GST_INCLUSIVE']);
+  });
+  it('QC: QST missing is flagged', () => {
+    expect(codesOf(checkTax([ln(10000, 'GST5')], ch(500, 0), 'QC', codes))).toEqual(['MISSING_TAX']);
+  });
+  it('wrong code for the province', () => {
+    const r = checkTax([ln(10000, 'HST13')], ch(1300), 'AB', codes);
+    expect(codesOf(r)).toEqual(['WRONG_PROVINCE_CODE']);
+    expect(r[0].message).toContain('GST5');
+  });
+  it('exempt line with no tax is fine, with tax is flagged', () => {
+    expect(checkTax([ln(10000, 'EXEMPT')], ch(0), 'ON', codes)).toEqual([]);
+    expect(codesOf(checkTax([ln(10000, 'EXEMPT')], ch(1300), 'ON', codes))).toEqual(['TAX_ON_EXEMPT']);
+  });
+  it('foreign vendor: no tax is fine, tax is flagged', () => {
+    expect(checkTax([ln(10000, 'FOREIGN')], ch(0), 'BC', codes)).toEqual([]);
+    expect(codesOf(checkTax([ln(10000, 'FOREIGN')], ch(500), 'BC', codes))).toEqual(['TAX_ON_EXEMPT']);
+  });
+  it('exempt line next to a taxable line adds nothing to the base', () => {
+    expect(checkTax([ln(10000, 'HST13'), ln(50000, 'EXEMPT')], ch(1300), 'ON', codes)).toEqual([]);
   });
   it('missing tax', () => {
-    expect(found(checkTax([line(10000, 'ON13')], [], 'ON', codes))).toEqual(['MISSING_TAX@0']);
+    expect(codesOf(checkTax([ln(10000, 'HST13')], ch(0), 'ON', codes))).toEqual(['MISSING_TAX']);
   });
-  it('rounding at half a cent rounds up', () => {
-    // 10 cents * 5% = 0.5 cent -> 1
-    expect(expectedTaxCents(10, 500)).toBe(1);
-    expect(checkTax([line(10, 'FIVE')], [tax(0, 1)], 'ON', codes)).toEqual([]);
-    expect(expectedTaxCents(9, 500)).toBe(0); // 0.45 rounds down
+  it('line with no code in a taxable province is flagged', () => {
+    expect(codesOf(checkTax([ln(10000, null)], ch(0), 'ON', codes))).toEqual(['WRONG_PROVINCE_CODE']);
+  });
+  it('half a cent rounds up on the invoice', () => {
+    expect(checkTax([ln(10, 'GST5')], ch(1), 'AB', codes)).toEqual([]);
   });
   it('one cent off is tolerated, two is not', () => {
-    expect(checkTax([line(10000, 'ON13')], [tax(0, 1301)], 'ON', codes)).toEqual([]);
-    expect(found(checkTax([line(10000, 'ON13')], [tax(0, 1302)], 'ON', codes))).toEqual(['TAX_MISMATCH@0']);
+    expect(checkTax([ln(10000, 'HST13')], ch(1301), 'ON', codes)).toEqual([]);
+    expect(codesOf(checkTax([ln(10000, 'HST13')], ch(1302), 'ON', codes))).toEqual(['TAX_MISMATCH']);
   });
-  it('two lines, two codes, only the bad one is flagged', () => {
-    const r = checkTax([line(10000, 'ON13'), line(2000, 'FIVE')], [tax(0, 1300), tax(1, 100)], 'ON', codes);
-    expect(r).toEqual([]);
-    expect(found(checkTax([line(10000, 'ON13'), line(2000, 'FIVE')], [tax(0, 1300), tax(1, 10)], 'ON', codes))).toEqual(['TAX_MISMATCH@1']);
-  });
-  it('several tax rows on one line add up', () => {
-    expect(checkTax([line(10000, 'ON13')], [tax(0, 500), tax(0, 800)], 'ON', codes)).toEqual([]);
-  });
-  it('empty lines: nothing to check', () => {
-    expect(checkTax([], [], 'ON', codes)).toEqual([]);
-  });
-  it('unknown code, and no code', () => {
-    expect(found(checkTax([line(100, 'NOPE'), line(100, null)], [], 'ON', codes))).toEqual(['UNKNOWN_TAX_CODE@0', 'UNKNOWN_TAX_CODE@1']);
-  });
-  it('tax pointing at a missing line is flagged', () => {
-    expect(found(checkTax([line(10000, 'ZERO')], [tax(3, 100)], 'ON', codes))).toEqual(['TAX_ON_UNKNOWN_LINE@null']);
-  });
-  it('credit note line rounds symmetrically', () => {
-    expect(expectedTaxCents(-10, 500)).toBe(-1);
-    expect(checkTax([line(-10000, 'ON13')], [tax(0, -1300)], 'ON', codes)).toEqual([]);
-  });
-  it('non-integer cents are rejected', () => {
-    expect(found(checkTax([line(10.5, 'ON13')], [], 'ON', codes))).toEqual(['NON_INTEGER_CENTS@null']);
+  it('unknown code, unknown province, non-integer cents', () => {
+    expect(codesOf(checkTax([ln(10000, 'XYZ')], ch(0), 'ON', codes))).toEqual(['UNKNOWN_TAX_CODE']);
+    expect(codesOf(checkTax([ln(10000, 'HST13')], ch(1300), 'ZZ', codes))).toEqual(['UNKNOWN_PROVINCE']);
+    expect(codesOf(checkTax([ln(100.5, 'HST13')], ch(13), 'ON', codes))).toEqual(['NON_INTEGER_CENTS']);
   });
 });
