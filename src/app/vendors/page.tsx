@@ -8,10 +8,10 @@ type Vendor = { id: number; name: string; category: string | null; status: strin
 // GET /api/vendors
 export default function VendorsPage() {
   return (
-    <main>
+    <main id="main">
       <h1>Vendors</h1>
       <Load<Vendor[]> url="/api/vendors">
-        {(vendors) => vendors.length === 0 ? <Empty>No vendors found.</Empty> : (
+        {(vendors) => vendors.length === 0 ? <Empty href="/upload" next="Upload an invoice">No vendors found. Vendors appear when an invoice names one.</Empty> : (
           <Table>
             <thead><tr><th>Name</th><th>Category</th><th>Status</th><th>Province</th><th className="num">Terms (days)</th><th>Bank acct</th></tr></thead>
             <tbody>

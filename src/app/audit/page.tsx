@@ -1,6 +1,6 @@
 "use client";
 import { useState, type FormEvent } from "react";
-import { Empty, Table } from "@/components/ui";
+import { Empty, Table, stamp } from "@/components/ui";
 import { Load } from "@/components/api";
 import RoleHome from "@/components/RoleHome";
 
@@ -16,7 +16,7 @@ export default function AuditPage() {
     setQuery(q.toString());
   }
   return (
-    <main>
+    <main id="main">
       <h1>Audit log</h1>
       <RoleHome page="/audit" />
       <form onSubmit={apply} className="inline">
@@ -28,12 +28,12 @@ export default function AuditPage() {
         <button type="submit">Filter</button>
       </form>
       <Load<Row[]> url={`/api/audit?${query}`}>
-        {(rows) => rows.length === 0 ? <Empty>No audit entries match this filter.</Empty> : (
+        {(rows) => rows.length === 0 ? <Empty href="/audit" next="Clear the filter">No audit entries match this filter.</Empty> : (
           <Table>
             <thead><tr><th>When</th><th>Who</th><th>What</th><th>Entity</th><th>Before</th><th>After</th></tr></thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id}><td>{r.at}</td><td>{r.actorId ?? "system"}</td><td>{r.action}</td><td>{r.entity} {r.entityId}</td>
+                <tr key={r.id}><td>{stamp(r.at)}</td><td>{r.actorId ?? "system"}</td><td>{r.action}</td><td>{r.entity} {r.entityId}</td>
                   <td><code>{JSON.stringify(r.before)}</code></td><td><code>{JSON.stringify(r.after)}</code></td></tr>
               ))}
             </tbody>

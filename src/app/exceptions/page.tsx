@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { SeverityChip, Table } from "@/components/ui";
+import { Empty, SeverityChip, Table } from "@/components/ui";
 import { FLAG_TITLE, Load, money, Notice, post, type Flag } from "@/components/api";
 
 type Item = { id: number; invoiceNumber: string; totalCents: number; currency: string; flags: Flag[] };
@@ -37,7 +37,7 @@ function ExceptionRow({ item, done }: { item: Item; done: () => void }) {
       <td>
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (required)" aria-label={`Note for invoice ${item.id}`} />
         <button onClick={() => resolve("send_to_approval")}>Send to approval</button>
-        <button onClick={() => resolve("reject")}>Reject</button>
+        <button className="secondary" onClick={() => resolve("reject")}>Reject</button>
         <Notice {...msg} />
       </td>
     </tr>
@@ -48,7 +48,7 @@ function ExceptionRow({ item, done }: { item: Item; done: () => void }) {
 export default function ExceptionsPage() {
   const [severity, setSeverity] = useState("");
   return (
-    <main>
+    <main id="main">
       <h1>Exceptions</h1>
       <label>Severity{" "}
         <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
@@ -59,7 +59,7 @@ export default function ExceptionsPage() {
       <Load<Item[]> url="/api/exceptions">
         {(items, reload) => {
           const groups = groupByCode(items, severity);
-          return items.length === 0 ? <p>Nothing needs review right now.</p> : groups.length === 0 ? <p>No flags at this severity.</p> : (
+          return items.length === 0 ? <Empty href="/invoices" next="Browse all invoices">Nothing needs review right now.</Empty> : groups.length === 0 ? <p>No flags at this severity.</p> : (
             <>
               {groups.map((g) => (
                 <section key={g.code}>

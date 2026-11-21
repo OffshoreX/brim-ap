@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { Empty, Table } from "@/components/ui";
+import { Empty, Table, ymd } from "@/components/ui";
+import { Icon } from "@/components/icons";
 import { Load, Notice, post } from "@/components/api";
 
 type Imported = { emailId: string; class: string; invoiceIds: number[]; flags: string[]; skipped?: string };
@@ -39,9 +40,9 @@ export default function InboxPage() {
   const mailFor = (mail: Other[], t: Tab) => mail.filter((m) => tabOf(m.class) === t);
 
   return (
-    <main>
+    <main id="main">
       <h1>Inbox</h1>
-      <button onClick={run}>Import inbox</button>
+      <button onClick={run}><Icon name="download" />Import inbox</button>
       <Notice error={error} />
       <div role="tablist" className="tabs" aria-label="Inbox mail">
         {TABS.map((t) => (
@@ -66,13 +67,13 @@ export default function InboxPage() {
         <Load<Other[]> url={`/api/inbox/other?v=${version}`}>
           {(all) => {
             const mail = mailFor(all, tab);
-            return mail.length === 0 ? <Empty>Nothing in this tab.</Empty> : (
+            return mail.length === 0 ? <Empty href="/invoices" next="Browse invoices">Nothing in this tab.</Empty> : (
               <Table>
                 <thead><tr><th>From</th><th>Subject</th><th>Received</th><th>Why</th><th>Link</th></tr></thead>
                 <tbody>
                   {mail.map((m) => (
                     <tr key={m.emailId}>
-                      <td>{m.from}</td><td>{m.subject}</td><td>{m.receivedAt}</td>
+                      <td>{m.from}</td><td>{m.subject}</td><td>{ymd(m.receivedAt)}</td>
                       <td>{WHY[m.class] ?? m.class}{m.reason && `: ${m.reason}`}</td>
                       {/* The list does not say which vendor sent it, so this goes to the vendor list. */}
                       <td>{m.class === "bank_change" ? <Link href="/vendors">Vendors</Link> : "—"}</td>
