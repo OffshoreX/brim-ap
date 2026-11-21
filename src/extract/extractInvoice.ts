@@ -29,8 +29,8 @@ export type ExtractedInvoice = {
 };
 
 export type ExtractResult =
-  | { status: "ok"; invoice: ExtractedInvoice; cached: boolean }
-  | { status: "needs_review"; reason: string };
+  | { status: "ok"; invoice: ExtractedInvoice; cached: boolean; promptVersion?: string }
+  | { status: "needs_review"; reason: string; promptVersion?: string };
 
 const MIME_KIND: Record<string, "document" | "image"> = {
   "application/pdf": "document",
@@ -57,6 +57,14 @@ Every money value (unitPrice, amount, total) is a plain decimal string such as "
 If a field is not on the invoice use null. Never invent values.
 For each line, quantity is a decimal string; use "1" when the invoice shows no quantity (flat services). If a line has no unit price use its amount.
 For each tax, code is the tax code shown (for example GST, HST, QST, PST) or "" if none is shown. A credit note has negative amounts, including a negative total.`;
+
+// Short hash of the prompt text: editing SYSTEM or PROMPT changes it, so old cached answers are no longer reused.
+const versionOf = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 12);
+export const PROMPT_VERSION = versionOf(SYSTEM + "\0" + PROMPT);
+
+// Cache key = file bytes + prompt version + model. Old bytes-only files stay on disk, just never matched.
+export const cacheKey = (fileBytes: Uint8Array, promptVersion: string, model: string) =>
+  createHash("sha256").update(fileBytes).update("\0" + promptVersion + "\0" + model).digest("hex");
 
 // Decimal string -> integer cents using string/integer math only (no floats).
 export function toCents(v: unknown): number {
@@ -146,15 +154,18 @@ export function validateInvoice(raw: unknown): ExtractedInvoice {
 export async function extractInvoice(
   fileBytes: Uint8Array,
   mimeType: string,
-  opts: { cacheDir?: string; retryDelayMs?: number } = {},
+  // promptVersion is a test seam: it stands in for an edited prompt.
+  opts: { cacheDir?: string; retryDelayMs?: number; promptVersion?: string } = {},
 ): Promise<ExtractResult> {
-  const review = (reason: string): ExtractResult => ({ status: "needs_review", reason });
+  const promptVersion = opts.promptVersion ?? PROMPT_VERSION;
+  const model = process.env.EXTRACT_MODEL || "claude-sonnet-5-5";
+  const review = (reason: string): ExtractResult => ({ status: "needs_review", reason, promptVersion });
   try {
     const kind = MIME_KIND[mimeType];
     if (!kind) return review(`unsupported file type ${mimeType}`);
 
-    // Cache first: the same bytes never reach the API twice, and need no key.
-    const hash = createHash("sha256").update(fileBytes).digest("hex");
+    // Cache first: the same bytes, prompt and model never reach the API twice, and need no key.
+    const hash = cacheKey(fileBytes, promptVersion, model);
     const cacheFile = path.join(opts.cacheDir ?? path.join(process.cwd(), "data", "extract-cache"), `${hash}.json`);
     let cachedRaw: unknown;
     try {
@@ -164,7 +175,7 @@ export async function extractInvoice(
     }
     if (cachedRaw !== undefined) {
       try {
-        return { status: "ok", invoice: validateInvoice(cachedRaw), cached: true };
+        return { status: "ok", invoice: validateInvoice(cachedRaw), cached: true, promptVersion };
       } catch (e) {
         // The saved model answer fails today's checks. Do not pay for the same file again
         // unless asked (EXTRACT_RETRY=1); fixing the checks re-validates it for free.
@@ -179,7 +190,7 @@ export async function extractInvoice(
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
-        model: process.env.EXTRACT_MODEL || "claude-sonnet-5-5",
+        model,
         max_tokens: 4096,
         system: SYSTEM,
         messages: [{
@@ -218,7 +229,7 @@ export async function extractInvoice(
     fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
     fs.writeFileSync(cacheFile, JSON.stringify(parsed));
     const invoice = validateInvoice(parsed);
-    return { status: "ok", invoice, cached: false };
+    return { status: "ok", invoice, cached: false, promptVersion };
   } catch (e) {
     // reason never includes the key: it only ever lives in the request header
     return review(e instanceof Error ? e.message : "extraction failed");

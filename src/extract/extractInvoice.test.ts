@@ -2,8 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createHash } from "node:crypto";
-import { extractInvoice } from "./extractInvoice";
+import { cacheKey, extractInvoice, PROMPT_VERSION } from "./extractInvoice";
 
 const good = {
   vendorName: "Acme Ltd", invoiceNumber: "INV-1", invoiceDate: "2026-11-01", dueDate: "2026-12-01",
@@ -209,16 +208,57 @@ test("400 is not retried", async () => {
 test("unreadable document -> needs_review with the model's reason, not cached", async () => {
   vi.stubGlobal("fetch", reply({ unreadable: true, reason: "page is blank" }));
   const r = await run(good);
-  expect(r).toEqual({ status: "needs_review", reason: "document unreadable: page is blank" });
+  expect(r).toMatchObject({ status: "needs_review", reason: "document unreadable: page is blank" });
   expect(fs.readdirSync(dir)).toHaveLength(0);
 });
 
 test("cache entry saved before the new fields still validates", async () => {
   const b = bytes();
-  fs.writeFileSync(path.join(dir, `${createHash("sha256").update(b).digest("hex")}.json`), JSON.stringify(good));
+  fs.writeFileSync(path.join(dir, `${cacheKey(b, PROMPT_VERSION, "claude-sonnet-5-5")}.json`), JSON.stringify(good));
   const f = reply(good);
   vi.stubGlobal("fetch", f);
   const r = await extractInvoice(b, "application/pdf", { cacheDir: dir });
   expect(r.status === "ok" && r.cached).toBe(true);
   expect(f).not.toHaveBeenCalled();
+});
+
+test("a changed prompt misses the cache and calls the API once more", async () => {
+  const f = reply(good);
+  vi.stubGlobal("fetch", f);
+  const b = bytes();
+  await extractInvoice(b, "application/pdf", { cacheDir: dir });
+  const edited = await extractInvoice(b, "application/pdf", { cacheDir: dir, promptVersion: "edited" });
+  expect(f).toHaveBeenCalledTimes(2);
+  expect(edited.status === "ok" && edited.cached).toBe(false);
+  expect(edited.promptVersion).toBe("edited");
+  await extractInvoice(b, "application/pdf", { cacheDir: dir, promptVersion: "edited" });
+  expect(f).toHaveBeenCalledTimes(2);
+  expect(fs.readdirSync(dir)).toHaveLength(2); // old entry kept, not deleted
+});
+
+test("a changed model misses the cache", async () => {
+  const f = reply(good);
+  vi.stubGlobal("fetch", f);
+  const b = bytes();
+  try {
+    process.env.EXTRACT_MODEL = "model-a";
+    await extractInvoice(b, "application/pdf", { cacheDir: dir });
+    process.env.EXTRACT_MODEL = "model-b";
+    await extractInvoice(b, "application/pdf", { cacheDir: dir });
+  } finally {
+    delete process.env.EXTRACT_MODEL;
+  }
+  expect(f).toHaveBeenCalledTimes(2);
+});
+
+test("an old-format cache file (named by bytes only) is ignored", async () => {
+  const b = bytes();
+  const { createHash } = await import("node:crypto");
+  fs.writeFileSync(path.join(dir, `${createHash("sha256").update(b).digest("hex")}.json`), JSON.stringify(good));
+  const f = reply(good);
+  vi.stubGlobal("fetch", f);
+  const r = await extractInvoice(b, "application/pdf", { cacheDir: dir });
+  expect(r.status === "ok" && r.cached).toBe(false);
+  expect(f).toHaveBeenCalledTimes(1);
+  expect(r.promptVersion).toBe(PROMPT_VERSION);
 });
