@@ -5,7 +5,8 @@ import { useParams } from "next/navigation";
 import { FlagBox, Load, money, post, topFlag, type Flag } from "@/components/api";
 import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
 import { CAN_CLERK, CAN_DECIDE, CAN_RELEASE, useCan, useCurrentUser } from "@/components/CurrentUser";
-import { Empty, SeverityChip, StatusBadge, Table, stamp, ymd } from "@/components/ui";
+import { Empty, SeverityChip, StatusBadge, Table, ymd } from "@/components/ui";
+import { AuditTable, type AuditRow } from "@/components/AuditTable";
 
 type Line = { lineNo: number; description: string; quantity: number; unitPriceCents: number; amountCents: number; currency: string; taxCents: number | null; glCode: string | null };
 type Step = { stepNo: number; role: string; roleLabel: string; actorName: string | null; delegatedFromId: number | null; delegatedFromName: string | null; reason: string | null; status: string };
@@ -15,7 +16,6 @@ type Detail = {
   gstHstCents: number | null; pstQstCents: number | null; totalCents: number; currency: string; vendorName: string | null;
   extraction: unknown; flags: Flag[]; lines: Line[]; approvalChain: Step[]; approvals: { id: number; stepNo: number; decision: string; decidedAt: string; comment: string | null }[]; payments: Pay[];
 };
-type Audit = { id: number; at: string; actorId: number | null; action: string; before: unknown; after: unknown };
 
 // GET /api/invoices/{id} and /trail; POST /api/invoices/{id}/decision, /api/payments/prepare, /api/payments/release.
 export default function InvoicePage() {
@@ -31,8 +31,7 @@ export default function InvoicePage() {
 
   return (
     <main id="main">
-      <h1>Invoice {id}</h1>
-      <Load<Detail> url={`/api/invoices/${id}?v=${version}`}>
+      <Load<Detail> url={`/api/invoices/${id}?v=${version}`} heading={(d) => <>Invoice {d?.invoiceNumber || id}</>}>
         {(d) => {
           const payee = d.vendorName ?? "unknown vendor";
           const top = topFlag(d.flags);
@@ -142,16 +141,9 @@ export default function InvoicePage() {
       </Load>
       <details>
         <summary>Audit trail</summary>
-        <Load<Audit[]> url={`/api/invoices/${id}/trail?v=${version}`}>
+        <Load<AuditRow[]> url={`/api/invoices/${id}/trail?v=${version}`}>
           {(rows) => rows.length === 0 ? <Empty>No audit entries for this invoice yet.</Empty> : (
-            <Table>
-              <thead><tr><th>When</th><th>Who</th><th>What</th><th>Before</th><th>After</th></tr></thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id}><td>{stamp(r.at)}</td><td>{r.actorId ?? "system"}</td><td>{r.action}</td><td><code>{JSON.stringify(r.before)}</code></td><td><code>{JSON.stringify(r.after)}</code></td></tr>
-                ))}
-              </tbody>
-            </Table>
+            <AuditTable rows={rows} />
           )}
         </Load>
       </details>

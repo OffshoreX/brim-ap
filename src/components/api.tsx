@@ -1,4 +1,5 @@
 "use client";
+import { flagTitle } from "./labels";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Icon } from "./icons";
 import { SeverityChip, Skeleton } from "./ui";
@@ -88,11 +89,13 @@ export const LoadError = ({ url, error }: { url: string; error: string }) => (
 );
 
 // Shows loading or the error message, otherwise hands the data to the page.
-export function Load<T>({ url, children }: { url: string | null; children: (data: T, reload: () => void) => ReactNode }) {
+// `heading` draws the page title, so it can name the record (invoice number, vendor name) once loaded and fall back before that.
+export function Load<T>({ url, children, heading }: { url: string | null; children: (data: T, reload: () => void) => ReactNode; heading?: (data: T | undefined) => ReactNode }) {
   const { data, error, reload } = useApi<T>(url);
-  if (error) return <LoadError url={url ?? ""} error={error} />;
-  if (data === undefined) return <Skeleton />;
-  return <>{children(data, reload)}</>;
+  const h1 = heading && <h1>{heading(data)}</h1>;
+  if (error) return <>{h1}<LoadError url={url ?? ""} error={error} /></>;
+  if (data === undefined) return <>{h1}<Skeleton /></>;
+  return <>{h1}{children(data, reload)}</>;
 }
 
 // Integer cents to "1,234.56". Display only, no arithmetic on floats.
@@ -117,22 +120,20 @@ export function Notice({ ok, error }: { ok?: string; error?: string }) {
 
 // Backend flags are {code, message, severity} objects.
 export type Flag = { code: string; message: string; severity?: string };
-// Plain names for the budget and outlier warnings, shown before the server's own reason text.
-export const FLAG_TITLE: Record<string, string> = { department_over_budget: "Department over budget", amount_outlier: "Unusual amount for this vendor" };
 const RANK: Record<string, number> = { error: 0, warning: 1, info: 2 };
 const rank = (f: Flag) => RANK[f.severity ?? ""] ?? 1; // a flag with no or an unknown severity counts as a warning, like the server does
 // The worst flag first; ties keep the order the server sent.
 export const topFlag = (flags: Flag[]) => [...flags].sort((a, b) => rank(a) - rank(b))[0];
 export const worstSeverity = (flags: Flag[]): "error" | "warning" | "info" => (flags.length === 0 ? "info" : (["error", "warning", "info"] as const)[rank(topFlag(flags))]);
 
-// The reason is the message; the machine code follows it, small. An error says "Blocked" in words, not only in red.
+// The reason is the message, after a plain title. An error says "Blocked" in words, not only in red.
 export function Flags({ flags }: { flags: Flag[] }) {
   if (flags.length === 0) return <p className="empty"><Icon name="approved" />No flags. Every check passed.</p>;
   return (
     <ul className="flags">
       {flags.map((f, i) => (
         <li key={i}>
-          <SeverityChip severity={f.severity} /> {f.severity === "error" && <strong>Blocked: </strong>}{FLAG_TITLE[f.code] && <strong>{FLAG_TITLE[f.code]}: </strong>}{f.message} <small className="muted"><code>{f.code}</code></small>
+          <SeverityChip severity={f.severity} /> {f.severity === "error" && <strong>Blocked: </strong>}<strong>{flagTitle(f.code)}: </strong>{f.message}
         </li>
       ))}
     </ul>

@@ -56,7 +56,7 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .topbar .who { display: flex; align-items: center; gap: var(--s2); }
 .topbar button.secondary { background: transparent; color: #fff; border-color: var(--nav-line); }
 .topbar button.secondary:hover { background: var(--nav-on); }
-.role { background: var(--nav-on); border-radius: var(--pill); padding: 0 var(--s2); font-size: var(--fs-xs); text-transform: capitalize; border: 1px solid var(--pill-line); }
+.role { background: var(--nav-on); border-radius: var(--pill); padding: 0 var(--s2); font-size: var(--fs-xs); border: 1px solid var(--pill-line); }
 .footer { padding: var(--s4); text-align: center; color: var(--muted); font-size: var(--fs-sm); border-top: 1px solid var(--line); }
 main { padding: var(--s5) var(--s4) var(--s6); max-width: 72rem; margin: 0 auto; }
 
@@ -164,7 +164,6 @@ pre { overflow: auto; font-family: var(--mono); font-size: var(--fs-sm); }
 .cards.big a.card:hover { border-color: var(--accent); background: var(--hover); }
 .personas { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--s4); }
 .personas section { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 0 var(--s4) var(--s4); }
-.personas h2 { text-transform: capitalize; }
 .persona { display: block; width: 100%; text-align: left; margin: var(--s2) 0; }
 .persona small { display: block; opacity: .9; font-weight: 400; }
 .persona.off { background: var(--head); color: var(--muted); border-color: var(--line); }
@@ -207,3 +206,4 @@ pre { overflow: auto; font-family: var(--mono); font-size: var(--fs-sm); }
 .pager { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s3); }
 .pager button:disabled { opacity: .5; cursor: not-allowed; }
 td .chip { margin: 0 var(--s1); } /* flag severity chip sits between the count and the reason text */
+td pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--s2) 0 0; font-size: var(--fs-xs); }
