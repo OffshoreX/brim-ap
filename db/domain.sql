@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS tax_codes (
 );
 
 -- flags is JSON text (list of reasons) so new checks need no schema change.
+-- extraction_json keeps the raw extractor output so a review can see what the model read.
 CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY,
   status TEXT NOT NULL DEFAULT 'received'
@@ -60,7 +61,10 @@ CREATE TABLE IF NOT EXISTS invoices (
   currency TEXT NOT NULL CHECK (currency IN ('CAD','USD')),
   requester_id INTEGER REFERENCES users(id),
   po_id INTEGER REFERENCES purchase_orders(id),
-  flags TEXT NOT NULL DEFAULT '[]'
+  flags TEXT NOT NULL DEFAULT '[]',
+  source_file TEXT,
+  extraction_json TEXT,
+  extracted_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS invoice_lines (
@@ -72,7 +76,8 @@ CREATE TABLE IF NOT EXISTS invoice_lines (
   amount_cents INTEGER NOT NULL,
   currency TEXT NOT NULL CHECK (currency IN ('CAD','USD')),
   gl_account_id INTEGER REFERENCES gl_accounts(id),
-  tax_code_id INTEGER REFERENCES tax_codes(id)
+  tax_code_id INTEGER REFERENCES tax_codes(id),
+  tax_cents INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS approvals (
