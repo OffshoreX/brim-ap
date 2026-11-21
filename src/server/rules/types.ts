@@ -40,3 +40,8 @@ export type CodingResult =
 export type ReleaseUser = { role: string; releaseLimitCents: number };
 export type ReleasePayment = { amountCents: number };
 export type ReleaseResult = { allowed: true } | { allowed: false; reason: string };
+
+// Bank-detail change check inputs.
+export type BankDetails = { accountNumber: string; routingNumber?: string };
+// `since` is the ISO date (yyyy-mm-dd) these details were first recorded for the vendor.
+export type BankRecord = BankDetails & { since: string };
