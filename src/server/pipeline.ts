@@ -13,6 +13,7 @@ import { checkCreditNote } from "./rules/creditnote";
 import { CARD_WINDOW_DAYS, findCrossPayments, type BankTxn, type CardTxn, type PaymentRow } from "./rules/crosspay";
 import { findDuplicates } from "./rules/duplicates";
 import { convertCents } from "./rules/fx";
+import { dueDateFor, parseEarlyPayTerms } from "./rules/paymentTerms";
 import { checkPoMatch } from "./rules/po";
 import { findSplitInvoices } from "./rules/split";
 import { checkTax, type TaxCodeRate, type TaxLine } from "./rules/tax";
@@ -46,6 +47,7 @@ type Db = ReturnType<typeof getDb>;
 type Vendor = {
   id: number; name: string; requires_po: number | null;
   bank_institution: string | null; bank_transit: string | null; bank_account: string | null; bank_details_updated_at: string | null;
+  payment_terms_days: number | null; early_pay_discount: string | null;
 };
 type ContractRow = {
   id: number; billing_type: BillingContract["billingType"]; currency: string; start_date: string; end_date: string; status: string | null;
@@ -159,14 +161,15 @@ function creditFindings(db: Db, x: ExtractedInvoice, vendorId: number, invoiceId
 // Only money that left outside our own records counts: a bank or card line that one of our payments explains is not a second payment.
 // ponytail: "explains" = same CAD amount paid within 3 days; an unrelated payment that clashes would hide a real duplicate.
 function crossFindings(db: Db, vendor: Vendor, invoiceId: number, date: string, cadCents: number): Finding[] {
+  // Columns are table-qualified: unqualified, `amount_cad_cents` would bind to payments.amount_cad_cents inside the subquery and match every payment.
   const unexplained = (amount: string, posted: string) =>
     `NOT EXISTS (SELECT 1 FROM payments p WHERE p.amount_cad_cents = ${amount} AND p.paid_at IS NOT NULL AND ABS(julianday(substr(p.paid_at,1,10)) - julianday(${posted})) <= 3)`;
   // The rule decides on name and date; these queries only narrow the rows to the same amount (card allows 1 cent, as the rule does).
   const card = db
-    .prepare(`SELECT COALESCE(ext_id, CAST(id AS TEXT)) AS id, COALESCE(merchant_descriptor,'') AS merchant, amount_cad_cents AS amountCadCents, posted_date AS date FROM card_transactions WHERE amount_cad_cents BETWEEN ? AND ? AND ${unexplained("amount_cad_cents", "posted_date")}`)
+    .prepare(`SELECT COALESCE(ext_id, CAST(id AS TEXT)) AS id, COALESCE(merchant_descriptor,'') AS merchant, amount_cad_cents AS amountCadCents, posted_date AS date FROM card_transactions WHERE amount_cad_cents BETWEEN ? AND ? AND ${unexplained("card_transactions.amount_cad_cents", "card_transactions.posted_date")}`)
     .all(cadCents - 1, cadCents + 1) as CardTxn[];
   const bank = db
-    .prepare(`SELECT COALESCE(ext_id, CAST(id AS TEXT)) AS id, COALESCE(description,'') AS description, debit_cents AS debitCents, posted_date AS date FROM bank_statement WHERE debit_cents = ? AND ${unexplained("debit_cents", "posted_date")}`)
+    .prepare(`SELECT COALESCE(ext_id, CAST(id AS TEXT)) AS id, COALESCE(description,'') AS description, debit_cents AS debitCents, posted_date AS date FROM bank_statement WHERE debit_cents = ? AND ${unexplained("bank_statement.debit_cents", "bank_statement.posted_date")}`)
     .all(cadCents) as BankTxn[];
   // Monthly fees repeat at the same amount, so only payments close to this invoice's date count.
   const payments = db
@@ -248,7 +251,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
 
     // Vendor match (rules/vendorMatch.ts). The extractor does not return a tax number yet, so only the name is passed.
     const vendors = db
-      .prepare("SELECT id, name, gst_hst_number AS taxNumber, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at FROM vendors")
+      .prepare("SELECT id, name, gst_hst_number AS taxNumber, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at, payment_terms_days, early_pay_discount FROM vendors")
       .all() as (Vendor & { taxNumber: string | null })[];
     const match = matchVendor(x.vendorName, vendors);
     const vendor = match.status === "matched" ? vendors.find((v) => v.id === match.id)! : null;
@@ -263,6 +266,11 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
           | { id: number; vendor_id: number; total_cents: number; currency: string }
           | undefined)
       : undefined;
+
+    // Terms we cannot read mean no discount, and a clerk is told why. A missing due date is worked out from the vendor's terms.
+    const terms = parseEarlyPayTerms(vendor?.early_pay_discount);
+    if (terms.kind === "unparsed") flags.push(warning("early_pay_terms_unparsed", terms.note));
+    const dueDate = x.dueDate ?? (vendor ? dueDateFor(x.invoiceDate, vendor.payment_terms_days) : null);
 
     // Amounts the checks and the stored row share. CAD is used only to compare against limits and other CAD records.
     const subtotalCents = sum(x.lines.map((l) => l.amountCents));
@@ -288,7 +296,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
       `UPDATE invoices SET vendor_id=?, invoice_number=?, invoice_date=?, due_date=?, subtotal_cents=?, gst_hst_cents=?, pst_qst_cents=?, total_cents=?, currency=?,
        fx_rate_to_cad_bps=?, total_cad_cents=?, ship_to_province=?, po_id=?, contract_id=?, extraction_json=?, extracted_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`
     ).run(
-      vendorId, x.invoiceNumber, x.invoiceDate, x.dueDate, subtotalCents, tax?.charged.gstHstCents ?? null, tax?.charged.pstQstCents ?? null, x.totalCents, x.currency,
+      vendorId, x.invoiceNumber, x.invoiceDate, dueDate, subtotalCents, tax?.charged.gstHstCents ?? null, tax?.charged.pstQstCents ?? null, x.totalCents, x.currency,
       x.currency === "CAD" ? 10_000 : fx?.rateBps ?? null, totalCadCents, ctx.province, po?.id ?? null, contract?.id ?? null, JSON.stringify(x), invoiceId
     );
     db.prepare("DELETE FROM invoice_lines WHERE invoice_id = ?").run(invoiceId);
