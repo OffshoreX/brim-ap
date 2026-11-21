@@ -69,7 +69,8 @@ export function routeApprovalChain(
   ];
   const t = invoice.totalCadCents;
   const vendorReasons: string[] = [];
-  if (vendor.status === 'pending_review') vendorReasons.push('P05 vendor pending review');
+  // on_hold is not in the policy text, but history sends every on_hold vendor invoice through finance (T45 replay), so it is treated like pending_review.
+  if (vendor.status === 'pending_review' || vendor.status === 'on_hold') vendorReasons.push(`P05 vendor ${vendor.status.replace('_', ' ')}`);
   if (isNewVendor(vendor.onboardedAt, invoice.date)) vendorReasons.push(`P05 vendor onboarded within ${NEW_VENDOR_DAYS} days`);
   if (vendor.category === 'Legal') vendorReasons.push('P06 legal vendor');
   if (t > thresholds.financeOverCents) vendorReasons.unshift('P02 total over finance threshold');
