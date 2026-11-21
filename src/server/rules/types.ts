@@ -13,3 +13,19 @@ export type InvoiceKey = {
   date: string; // ISO yyyy-mm-dd
   kind?: 'invoice' | 'credit_note';
 };
+
+// Approval routing inputs.
+export type ApprovalUser = {
+  id: string;
+  role: string;
+  managerId?: string;
+  limitCents: number; // largest invoice this person may approve
+  onLeave?: boolean;
+  delegateId?: string;
+};
+export type ApprovalInvoice = { totalCents: number; department: string };
+// Amount range is [minCents, maxCents); department omitted means any.
+export type ApprovalRule = { minCents: number; maxCents: number; department?: string; approverRole: string };
+export type ApprovalResult =
+  | { status: 'routed'; approverId: string; delegated: boolean; delegatedFromId?: string; reason: string }
+  | { status: 'needs_review'; reason: string };
