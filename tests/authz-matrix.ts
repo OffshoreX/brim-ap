@@ -44,7 +44,8 @@ export const MATRIX: [string, string, Access][] = [
   ["reports/aging",                      "GET",   REPORTS],
   ["reports/spend",                      "GET",   REPORTS],
   ["reports/discounts",                  "GET",   REPORTS],
-  ["audit",                              "GET",   ["auditor", "controller_admin", "finance_manager"]],
+  ["audit",                              "GET",   ["auditor", "controller_admin", "finance_manager"]], // also ?format=csv
+  ["audit/verify",                       "GET",   ["auditor", "controller_admin"]],
   ["admin/ping",                         "GET",   ["controller_admin"]],
   ["admin/approval-rules",               "GET",   ["controller_admin"]],
   ["admin/approval-rules/[id]",          "PUT",   ["controller_admin"]],

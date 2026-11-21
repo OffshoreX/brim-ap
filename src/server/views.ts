@@ -158,6 +158,39 @@ export function auditLog(f: AuditFilter) {
   return rows.map(auditRow);
 }
 
+const CSV_BATCH = 1000;
+const CSV_HEAD = ["id", "at", "actor_id", "action", "entity", "entity_id", "before", "after", "prev_hash", "row_hash"];
+type CsvRow = Record<string, string | number | null>;
+
+// Text cells are always quoted. A leading = + - @ would run as a formula in Excel, so those get a ' in front.
+const csvCell = (v: string | number | null) =>
+  v === null ? "" : typeof v === "number" ? String(v) : `"${(/^[=+\-@\t\r]/.test(v) ? "'" + v : v).replace(/"/g, '""')}"`;
+
+// Oldest first, in batches of 1000 rows keyed on (at, id), so memory stays flat however big the log is and the existing
+// (entity|actor, at) indexes serve the sort. Each pull reads one batch; nothing holds a cursor open between pulls.
+export function auditCsvStream(f: AuditFilter): ReadableStream<Uint8Array> {
+  const w = auditWhere(f);
+  const stmt = getDb().prepare(
+    `SELECT ${CSV_HEAD.join(", ")} FROM audit_log ${w.sql ? w.sql + " AND" : "WHERE"} (at, id) > (?, ?) ORDER BY at, id LIMIT ${CSV_BATCH}`
+  );
+  const enc = new TextEncoder();
+  let after: [string, number] = ["", 0];
+  return new ReadableStream({
+    start(c) {
+      c.enqueue(enc.encode(CSV_HEAD.join(",") + "\r\n"));
+    },
+    pull(c) {
+      const rows = stmt.all(...w.args, ...after) as CsvRow[];
+      if (rows.length) {
+        c.enqueue(enc.encode(rows.map((r) => CSV_HEAD.map((k) => csvCell(r[k])).join(",")).join("\r\n") + "\r\n"));
+        const last = rows[rows.length - 1];
+        after = [last.at as string, last.id as number];
+      }
+      if (rows.length < CSV_BATCH) c.close();
+    },
+  });
+}
+
 const INBOX_FROM = `FROM approval_steps s JOIN invoices i ON i.id = s.invoice_id
        WHERE s.user_id = ? AND s.status = 'pending' AND i.status = 'pending_approval'
          AND s.step_no = (SELECT MIN(step_no) FROM approval_steps WHERE invoice_id = s.invoice_id AND status = 'pending')`;
