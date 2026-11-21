@@ -19,6 +19,7 @@ const ADDED_COLUMNS: [string, string, string][] = [
   ["invoice_lines", "coding_source", "TEXT"],
   ["invoice_lines", "coding_reason", "TEXT"],
   ["invoice_lines", "coding_needed", "INTEGER NOT NULL DEFAULT 0 CHECK (coding_needed IN (0,1))"],
+  ["users", "password_hash", "TEXT"],
   ["audit_log", "prev_hash", "TEXT"],
   ["audit_log", "row_hash", "TEXT"],
 ];

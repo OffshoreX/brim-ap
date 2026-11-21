@@ -32,3 +32,9 @@ export function readCookie(request: Request, name: string): string | undefined {
     if (k === name) return v.join("=");
   }
 }
+
+// One Set-Cookie value for every way of logging in.
+export function sessionCookie(userId: number): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${COOKIE_NAME}=${signSession(userId)}; HttpOnly; SameSite=Lax; Path=/${secure}`;
+}

@@ -16,11 +16,13 @@ register("data:text/javascript," + encodeURIComponent(
 
 const { applySchema } = await import("../src/server/db.ts");
 const { importDataset } = await import("../src/server/importDataset.ts");
+const { setDemoPasswords } = await import("../src/server/password.ts");
 
 const file = process.env.DB_PATH || "data/app.db";
 if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
 const db = new Database(file);
 applySchema(db);
 const summary = importDataset(db);
+setDemoPasswords(db); // every sample user gets the demo password (never printed)
 console.log(`Imported dataset into ${file}`);
 console.table(summary);

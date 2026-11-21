@@ -14,8 +14,8 @@ type Access = "public" | readonly Role[];
 
 //  route (folder under src/app/api)     method   allowed roles
 export const MATRIX: [string, string, Access][] = [
-  ["login",                              "POST",  "public"],
-  ["users",                              "GET",   "public"], // demo login dropdown, fake users only
+  ["login",                              "POST",  "public"], // email + password; { userId } only when DEMO_PERSONA_PICKER=1
+  ["users",                              "GET",   "public"], // persona picker feed, fake users only; 404 unless DEMO_PERSONA_PICKER=1
   ["me",                                 "GET",   ALL],
   ["dashboard",                          "GET",   ALL],
   ["invoices",                           "GET",   ALL],
