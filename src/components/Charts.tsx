@@ -7,12 +7,17 @@ import { download, money } from "./api";
 export type Series = { name: string; color: string };
 export type BarRow = { label: string; values: number[] };
 
-const LABEL_W = 150, BAR_H = 16, GAP = 10, AXIS_H = 34, WIDTH = 640, RIGHT = 90;
-const short = (s: string) => (s.length > 22 ? s.slice(0, 21) + "…" : s);
+const LABEL_W = 240, BAR_H = 16, GAP = 10, AXIS_H = 34, WIDTH = 640, RIGHT = 100, LINE_H = 14, MAX_CHARS = 34;
+// Full name always visible: one line, or two split at a space. Never cut with "…" and never moved into a <title> tooltip.
+export function wrap(s: string): string[] {
+  if (s.length <= MAX_CHARS) return [s];
+  const cut = s.lastIndexOf(" ", MAX_CHARS);
+  return cut > 0 ? [s.slice(0, cut), s.slice(cut + 1)] : [s.slice(0, MAX_CHARS), s.slice(MAX_CHARS)];
+}
 
 export function BarChart({ title, rows, series, valueLabel = "Amount (CAD)", categoryLabel }: { title: string; rows: BarRow[]; series: Series[]; valueLabel?: string; categoryLabel: string }) {
   const max = Math.max(1, ...rows.flatMap((r) => r.values));
-  const rowH = series.length * BAR_H + GAP;
+  const rowH = Math.max(series.length * BAR_H, 2 * LINE_H + 2) + GAP; // tall enough for a two-line label
   const height = rows.length * rowH + AXIS_H + 16;
   const plotW = WIDTH - LABEL_W - RIGHT;
   const x = (v: number) => LABEL_W + (v / max) * plotW;
@@ -26,16 +31,18 @@ export function BarChart({ title, rows, series, valueLabel = "Amount (CAD)", cat
         {[0, 0.5, 1].map((t) => (
           <g key={t}>
             <line x1={x(max * t)} x2={x(max * t)} y1={0} y2={rows.length * rowH} className="grid" />
-            <text x={x(max * t)} y={rows.length * rowH + 14} textAnchor="middle" className="tick">{money(Math.round(max * t))}</text>
+            <text x={x(max * t)} y={rows.length * rowH + 14} textAnchor="middle" className="tick">{money(Math.round(max * t), "CAD")}</text>
           </g>
         ))}
         {rows.map((r, i) => (
           <g key={r.label} transform={`translate(0 ${i * rowH})`}>
-            <text x={LABEL_W - 8} y={BAR_H - 3} textAnchor="end" className="cat"><title>{r.label}</title>{short(r.label)}</text>
+            <text x={LABEL_W - 8} y={wrap(r.label).length > 1 ? BAR_H - 6 : BAR_H - 3} textAnchor="end" className="cat">
+              {wrap(r.label).map((line, k) => <tspan key={k} x={LABEL_W - 8} dy={k === 0 ? 0 : LINE_H}>{line}</tspan>)}
+            </text>
             {r.values.map((v, j) => (
               <g key={j}>
-                <rect x={LABEL_W} y={j * BAR_H} width={Math.max(v > 0 ? 2 : 0, x(v) - LABEL_W)} height={BAR_H - 3} fill={series[j].color} />
-                <text x={x(v) + 5} y={j * BAR_H + BAR_H - 5} className="val">{money(v)}</text>
+                <rect x={LABEL_W} y={j * BAR_H} width={Math.max(v > 0 ? 2 : 0, x(v) - LABEL_W)} height={BAR_H - 3} className="bar" style={{ fill: series[j].color }} />
+                <text x={x(v) + 6} y={j * BAR_H + BAR_H - 4} className="val">{money(v)}</text>
               </g>
             ))}
           </g>
