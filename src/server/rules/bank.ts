@@ -45,26 +45,49 @@ export type BankChangeRow = {
 const last4 = (s: string) => norm(s).slice(-4);
 const ageDays = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / DAY_MS;
 
+// An account shown as only its last digits ("****6789", at least 4) matches when it is the tail of the master's number.
+// Institution and transit, when the invoice shows them, must be equal. A part the invoice does not show is not compared.
+const accountMatches = (inv: string, master: string) => inv === master || (inv.length >= 4 && inv.length < master.length && master.endsWith(inv));
+export type InvoiceBank = { institution?: string | null; transit?: string | null; account?: string | null };
+export function bankDiffers(inv: InvoiceBank, vendor: VendorBank): boolean {
+  return (
+    (inv.institution != null && norm(inv.institution) !== norm(vendor.institution)) ||
+    (inv.transit != null && norm(inv.transit) !== norm(vendor.transit)) ||
+    (inv.account != null && !accountMatches(norm(inv.account), norm(vendor.account)))
+  );
+}
+
+// What the invoice says about where to pay: the extractor's separate fields win, else the printed text
+// ("003 92968 953389679" is institution, transit, account; a lone number is the account). Never throws.
+export type ReadBank = { kind: "none" } | { kind: "unreadable" } | { kind: "bank"; bank: InvoiceBank };
+export function readInvoiceBank(
+  x: { bankDetails: string | null; bankInstitution?: string | null; bankTransit?: string | null; bankAccount?: string | null }
+): ReadBank {
+  if (x.bankInstitution || x.bankTransit || x.bankAccount)
+    return { kind: "bank", bank: { institution: x.bankInstitution || null, transit: x.bankTransit || null, account: x.bankAccount || null } };
+  if (!x.bankDetails) return { kind: "none" };
+  const g = x.bankDetails.match(/\d+/g) ?? [];
+  if (g.length === 3) return { kind: "bank", bank: { institution: g[0], transit: g[1], account: g[2] } };
+  if (g.length === 1) return { kind: "bank", bank: { account: g[0] } };
+  return { kind: "unreadable" };
+}
+
 // The history keeps only last 4 digits, so the master record is the source of truth for equality
 // and the history is used for risk and for the wording of the reason.
 export function checkVendorBankRisk(
-  invoice: { institution: string; transit: string; account: string; date: string },
+  invoice: InvoiceBank & { date: string },
   vendor: VendorBank,
   changes: BankChangeRow[],
   today: string
 ): Finding[] {
   const out: Finding[] = [];
 
-  const differs =
-    norm(invoice.institution) !== norm(vendor.institution) ||
-    norm(invoice.transit) !== norm(vendor.transit) ||
-    norm(invoice.account) !== norm(vendor.account);
-  if (differs) {
-    const inv = last4(invoice.account);
+  if (bankDiffers(invoice, vendor)) {
+    const inv = last4(invoice.account ?? '');
     const stale = changes.some((c) => c.oldLast4 === inv);
     const reason = stale ? 'matches an account the vendor replaced' : 'matches no account in the change history';
     out.push({
-      code: 'bank_differs_from_master',
+      code: 'bank_details_differ',
       severity: 'error',
       message: `Invoice bank details (account ending ${inv}) differ from vendor master (ending ${last4(vendor.account)}); ${reason}`,
     });

@@ -48,7 +48,7 @@ describe('checkBankChange', () => {
 
 // ---- checkVendorBankRisk (T29) ----
 import { readFileSync } from 'node:fs';
-import { checkVendorBankRisk, type BankChangeRow } from './bank';
+import { bankDiffers, checkVendorBankRisk, readInvoiceBank, type BankChangeRow } from './bank';
 
 const master = { institution: '003', transit: '92968', account: '953389679' };
 const inv = { ...master, date: '2026-11-02' };
@@ -63,11 +63,11 @@ describe('checkVendorBankRisk', () => {
   it('formatting differences are not a mismatch', () =>
     expect(risk({ ...inv, account: '95338-9679', transit: '92 968' })).toEqual([]));
   it('different account is an error', () =>
-    expect(risk({ ...inv, account: '111111111' })).toEqual(['bank_differs_from_master']));
+    expect(risk({ ...inv, account: '111111111' })).toEqual(['bank_details_differ']));
   it('different transit only is an error', () =>
-    expect(risk({ ...inv, transit: '00000' })).toEqual(['bank_differs_from_master']));
+    expect(risk({ ...inv, transit: '00000' })).toEqual(['bank_details_differ']));
   it('different institution only is an error', () =>
-    expect(risk({ ...inv, institution: '999' })).toEqual(['bank_differs_from_master']));
+    expect(risk({ ...inv, institution: '999' })).toEqual(['bank_details_differ']));
   it('reason says stale when invoice matches the old last4', () => {
     const f = checkVendorBankRisk({ ...inv, account: '000007504' }, master, [ch()], '2026-11-02');
     expect(f[0].message).toContain('replaced');
@@ -91,7 +91,7 @@ describe('checkVendorBankRisk', () => {
     expect(risk(inv, { ...master, updatedAt: '2026-11-10' })).toEqual([]));
   it('unverified, recent and mismatched together', () =>
     expect(risk({ ...inv, account: '000007504' }, master, [ch({ changedAt: '2026-10-27', channel: 'email_request', verifiedByCallback: false })])).toEqual([
-      'bank_differs_from_master', 'bank_change_unverified', 'bank_changed_recently',
+      'bank_details_differ', 'bank_change_unverified', 'bank_changed_recently',
     ]));
 
   // Real dataset: the latest change that was unverified and by email must be flagged (no vendor id hardcoded).
@@ -100,5 +100,24 @@ describe('checkVendorBankRisk', () => {
     const bad = rows.find((r) => r[4] === 'email_request' && r[5] === 'no')!;
     const f = checkVendorBankRisk(inv, master, [ch({ changedAt: bad[2], channel: bad[4], verifiedByCallback: false, oldLast4: bad[6], newLast4: bad[7] })], bad[2]);
     expect(codes(f)).toEqual(['bank_change_unverified', 'bank_changed_recently']);
+  });
+});
+
+describe('bankDiffers / readInvoiceBank (T44)', () => {
+  it('a masked account matches on its last digits, and only when it is at least 4', () => {
+    expect(bankDiffers({ account: '****9679' }, master)).toBe(false);
+    expect(bankDiffers({ account: '9678' }, master)).toBe(true);
+    expect(bankDiffers({ account: '679' }, master)).toBe(true); // too short to prove anything
+  });
+  it('a part the invoice does not show is not compared; a part it shows must match', () => {
+    expect(bankDiffers({ institution: '003', transit: null, account: null }, master)).toBe(false);
+    expect(bankDiffers({ institution: '004' }, master)).toBe(true);
+  });
+  it('separate fields win over the printed text; text is split into three, a lone number is the account', () => {
+    expect(readInvoiceBank({ bankDetails: '1 2 3', bankAccount: '5555' })).toEqual({ kind: 'bank', bank: { institution: null, transit: null, account: '5555' } });
+    expect(readInvoiceBank({ bankDetails: '003 92968 953389679' })).toEqual({ kind: 'bank', bank: { institution: '003', transit: '92968', account: '953389679' } });
+    expect(readInvoiceBank({ bankDetails: 'acct 953389679' })).toEqual({ kind: 'bank', bank: { account: '953389679' } });
+    expect(readInvoiceBank({ bankDetails: '12345 123456789' })).toEqual({ kind: 'unreadable' });
+    expect(readInvoiceBank({ bankDetails: null })).toEqual({ kind: 'none' });
   });
 });
