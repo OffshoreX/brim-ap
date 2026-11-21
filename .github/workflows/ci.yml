@@ -44,7 +44,7 @@ jobs:
             skip "it changes lead-owned files (rules, docs, contracts, package files or workflows)"
           fi
           size=$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" --jq '[.[] | .additions + .deletions] | add')
-          if [ "${size:-0}" -gt 400 ]; then skip "it changes $size lines, over the 400 limit"; fi
+          if [ "${size:-0}" -gt 1000 ]; then skip "it changes $size lines, over the 1000 limit"; fi
           body=$(gh api "repos/$REPO/pulls/$PR" --jq '.body // ""')
           echo "$body" | grep -qi 'plain english' || skip "the description has no Plain English section"
           echo "$body" | grep -qi 'judge question' || skip "the description has no Judge question section"

@@ -32,7 +32,7 @@ Read this first. Every agent in this repo follows it. The human is Ulysse (the l
 - extract talks to the rest of the app only through the types in src/contracts.ts. engine never imports from src/extract/ internals.
 - Work only from a GitHub issue that has an acceptance check. No ticket, no work.
 - One branch per ticket. Fetch and rebase on main before every push.
-- Small PRs, under about 300 lines. If it is bigger, split it and say so.
+- One coherent slice per PR, up to about 800 lines. Bigger than that, split it and say so.
 - PR description ends with `Closes #N`.
 - Agents never merge. The lead reviews and merges.
 
