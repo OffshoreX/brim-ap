@@ -82,10 +82,15 @@ export function useApi<T>(url: string | null) {
   return { ...state, reload: useCallback(() => setTick((t) => t + 1), []) };
 }
 
+// The failed-load message names the endpoint (without its cache-busting query) so the user can say what broke.
+export const LoadError = ({ url, error }: { url: string; error: string }) => (
+  <p role="alert" className="error-box">Could not load {url.split("?")[0]}. {error}</p> // 401 and 403 text comes from failure()
+);
+
 // Shows loading or the error message, otherwise hands the data to the page.
 export function Load<T>({ url, children }: { url: string | null; children: (data: T, reload: () => void) => ReactNode }) {
   const { data, error, reload } = useApi<T>(url);
-  if (error) return <p role="alert" className="error-box">{error}</p>; // 401 and 403 text comes from failure()
+  if (error) return <LoadError url={url ?? ""} error={error} />;
   if (data === undefined) return <Skeleton />;
   return <>{children(data, reload)}</>;
 }

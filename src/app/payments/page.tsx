@@ -4,10 +4,11 @@ import { Empty, StatusBadge, Table, ymd } from "@/components/ui";
 import { download, Load, money, post } from "@/components/api";
 import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
 import RoleHome from "@/components/RoleHome";
+import { ReadyTable, type ReadyRow } from "@/components/ReadyTable";
 import type { Role } from "@/contracts";
 import { useCurrentUser } from "@/components/CurrentUser";
 
-type Pay = { id: number; invoiceId: number; invoiceNumber: string; vendorName: string | null; method: string; methodLabel: string; status: string; scheduledDate: string | null; paidAt: string | null; amountCents: number; currency: string; reference: string | null };
+type Pay = { id: number; invoiceId: number; invoiceNumber: string; vendorName: string | null; method: string; methodLabel: string; status: string; statusLabel?: string; scheduledDate: string | null; paidAt: string | null; amountCents: number; currency: string; reference: string | null };
 type Cheque = { paymentId: number; invoiceNumber: string; vendor: string | null; address: string | null; amountCents: number; currency: string; reference: string | null };
 
 // One row's Release: the confirm step names the amount, payee, method and date; the server still refuses a second release (409).
@@ -21,33 +22,22 @@ function Release({ p, a }: { p: Pay; a: ReturnType<typeof useActions> }) {
   );
 }
 
-// GET /api/payments, /api/payments/cheques, /api/payments/eft-file; POST /api/payments/prepare and /release.
+// GET /api/payments, /api/payments/ready, /api/payments/cheques, /api/payments/eft-file; POST /api/payments/prepare and /release.
 export default function PaymentsPage() {
   const [version, setVersion] = useState(0);
   // Hiding is for looks; the server answers 403 to anything the role may not do.
   const { role } = useCurrentUser();
   const can = (...r: Role[]) => !!role && r.includes(role);
   const a = useActions(() => setVersion((v) => v + 1));
-  function prepare(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    const method = String(f.get("method"));
-    const body = { invoiceId: Number(f.get("invoiceId")), ...(method ? { method } : {}) };
-    a.run("prepare", () => post("/api/payments/prepare", body, { "idempotency-key": crypto.randomUUID() }), "Payment prepared");
-  }
-
   return (
     <main id="main">
       <h1>Payments</h1>
       <RoleHome page="/payments" />
-      {can("ap_clerk", "finance_manager", "controller_admin") && <form onSubmit={prepare} className="inline">
-        <label>Invoice # <input name="invoiceId" type="number" min="1" required /></label>
-        <label>Method{" "}
-          <select name="method"><option value="">Vendor default</option><option>EFT</option><option>CHEQUE</option><option>CARD</option></select>
-        </label>
-        <ActionButton submit icon="paid" label="Prepare payment" busyLabel="Preparing…" busy={a.busyKey === "prepare"} locked={a.locked} />
-      </form>}
-      {a.show("prepare")}
+      {can("ap_clerk", "finance_manager", "controller_admin") && <>
+        <h2>Ready to pay</h2>
+        <Load<ReadyRow[]> url={`/api/payments/ready?v=${version}`}>{(rows) => <ReadyTable rows={rows} a={a} />}</Load>
+      </>}
+      <h2>Payments</h2>
       <Load<Pay[]> url={`/api/payments?v=${version}`}>
         {(rows) => rows.length === 0 ? <Empty href="/invoices" next="Find an approved invoice">No payments yet. Prepare one from an approved invoice.</Empty> : (
           <Table>
@@ -55,7 +45,7 @@ export default function PaymentsPage() {
             <tbody>
               {rows.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.id}</td><td className="nowrap">{p.invoiceNumber}</td><td>{p.vendorName ?? "—"}</td><td>{p.methodLabel}</td><td><StatusBadge status={p.status} /></td><td className="num">{ymd(p.scheduledDate)}</td>
+                  <td>{p.id}</td><td className="nowrap">{p.invoiceNumber}</td><td>{p.vendorName ?? "—"}</td><td>{p.methodLabel}</td><td><StatusBadge status={p.status} label={p.statusLabel} /></td><td className="num">{ymd(p.scheduledDate)}</td>
                   <td className="num">{money(p.amountCents, p.currency)}</td><td>{p.reference ?? ""}</td>
                   <td>
                     {p.status === "scheduled" && can("finance_manager", "controller_admin") && <Release p={p} a={a} />}

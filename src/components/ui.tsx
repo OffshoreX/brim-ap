@@ -9,9 +9,12 @@ export const STATUS_LABEL: Record<string, string> = {
 };
 // A status the UI does not know gets a neutral grey badge and a plain label ("part_paid" -> "Part paid"), never the raw code.
 const plain = (s: string) => { const t = s.replace(/_/g, " ").trim(); return t ? t[0].toUpperCase() + t.slice(1) : "Unknown"; };
-export function StatusBadge({ status }: { status: string }) {
-  const known = status in STATUS_LABEL;
-  return <span className={`badge ${known ? `badge-${status}` : "badge-unknown"}`}>{known && <Icon name={status as IconName} />}{known ? STATUS_LABEL[status] : plain(status)}</span>;
+// `label` is the plain text the API already sent (payments carry statusLabel); "settled" is the payment word for money moved, drawn as Paid.
+const ALIAS: Record<string, string> = { settled: "paid" };
+export function StatusBadge({ status, label }: { status: string; label?: string }) {
+  const key = ALIAS[status] ?? status;
+  const known = key in STATUS_LABEL;
+  return <span className={`badge ${known ? `badge-${key}` : "badge-unknown"}`}>{known && <Icon name={key as IconName} />}{label ?? (known ? STATUS_LABEL[key] : plain(status))}</span>;
 }
 
 const SEVERITY: Record<string, string> = { error: "Error", warning: "Warning", info: "Info" };

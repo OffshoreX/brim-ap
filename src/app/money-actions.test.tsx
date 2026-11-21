@@ -18,6 +18,7 @@ const DATA: Record<string, unknown> = {
   "/api/invoices/1/trail": [],
   "/api/payments": [payment],
   "/api/payments/cheques": { cheques: [] },
+  "/api/payments/ready": [{ invoiceId: 2, invoiceNumber: "INV-READY", vendorName: "Acme Freight", totalCents: 50000, currency: "CAD", dueDate: "2026-12-05", suggestedMethod: { method: "EFT", label: "EFT", reason: "Vendor's preferred method is EFT" }, earlyPayDiscountCents: null }],
   "/api/vendors/1": { id: 1, name: "Acme Ltd", category: null, status: "active", address: null, province_or_state: null, payment_terms_days: 30, preferred_payment_method: "EFT", bank_account_last4: "1234", bankChanges: [{ id: 1, changed_at: "2026-11-01", changed_by_user_id: 4, request_channel: "email", status: "pending", old_account_last4: "1234", new_account_last4: "9876", verified_by_user_id: null, verified_by_callback: 0, verified_at: null }] },
   "/api/exceptions": [{ id: 1, invoiceNumber: "INV-1", totalCents: 123456, currency: "CAD", flags: [blocking] }],
 };
