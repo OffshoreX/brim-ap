@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   total_cents INTEGER NOT NULL,
   currency TEXT NOT NULL CHECK (currency IN ('CAD','USD')),
   requester_id INTEGER REFERENCES users(id),
+  department TEXT,
   po_id INTEGER REFERENCES purchase_orders(id),
   flags TEXT NOT NULL DEFAULT '[]',
   source_file TEXT,
@@ -86,7 +87,9 @@ CREATE TABLE IF NOT EXISTS approvals (
   approver_id INTEGER NOT NULL REFERENCES users(id),
   decision TEXT NOT NULL CHECK (decision IN ('approved','rejected')),
   decided_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  comment TEXT
+  comment TEXT,
+  delegated INTEGER NOT NULL DEFAULT 0 CHECK (delegated IN (0,1)),
+  delegated_from_id INTEGER REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS payments (
