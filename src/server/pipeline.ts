@@ -9,7 +9,7 @@ import { budgetAndAnomalyFlags } from "./budgetAnomaly";
 import { AS_OF } from "./replayHistory";
 import { checkArithmetic } from "./rules/arithmetic";
 import { checkVendorBankRisk, readInvoiceBank, type BankChangeRow } from "./rules/bank";
-import { suggestCoding } from "./rules/coding";
+import { codeLine } from "./rules/coding";
 import { checkContractByBilling, type BillingContract, type BillingLine, type RateFor } from "./rules/contract";
 import { checkCreditNote } from "./rules/creditnote";
 import { CARD_WINDOW_DAYS, findCrossPayments, type BankTxn, type CardTxn, type PaymentRow } from "./rules/crosspay";
@@ -18,7 +18,7 @@ import { convertCents } from "./rules/fx";
 import { checkPaymentTerms, dueDateFor, parseEarlyPayTerms } from "./rules/paymentTerms";
 import { checkPoMatch } from "./rules/po";
 import { findSplitInvoices } from "./rules/split";
-import { checkTax, type TaxCodeRate, type TaxLine } from "./rules/tax";
+import { checkTax, requiredTaxCodes, type TaxCodeRate, type TaxLine } from "./rules/tax";
 import { checkVendorStatus } from "./rules/vendorStatus";
 import type { Finding } from "./rules/types";
 import { matchVendor } from "./rules/vendorMatch";
@@ -281,8 +281,8 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     // Matched, but only after ignoring formatting: say so, so a clerk can see which record was used.
     if (vendor && match.status === "matched" && match.by === "normalized_name") flags.push(warning("vendor_name_variant", `"${x.vendorName}" was matched to vendor "${vendor.name}"`));
     const po = x.poNumber
-      ? (db.prepare("SELECT id, vendor_id, total_cents, currency FROM purchase_orders WHERE po_number = ?").get(x.poNumber) as
-          | { id: number; vendor_id: number; total_cents: number; currency: string }
+      ? (db.prepare("SELECT id, vendor_id, department_id, total_cents, currency FROM purchase_orders WHERE po_number = ?").get(x.poNumber) as
+          | { id: number; vendor_id: number; department_id: number | null; total_cents: number; currency: string }
           | undefined)
       : undefined;
 
@@ -377,21 +377,39 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
         }
       }
 
-      // Coding is a suggestion from this vendor's past lines; it is applied to the lines and audited.
+      // Coding is decided per line (rules/coding.ts), applied to the line and audited with its reason.
       const past = db
         .prepare(
-          `SELECT g.code AS account, t.code AS tax FROM invoice_lines l
-           JOIN invoices i ON i.id = l.invoice_id JOIN gl_accounts g ON g.id = l.gl_account_id JOIN tax_codes t ON t.id = l.tax_code_id
-           WHERE i.vendor_id = ? AND i.id != ?`
+          `SELECT l.invoice_id AS invoiceId, l.description, g.code AS accountCode FROM invoice_lines l
+           JOIN invoices i ON i.id = l.invoice_id JOIN gl_accounts g ON g.id = l.gl_account_id
+           WHERE i.vendor_id = ? AND i.id != ? AND i.status != 'rejected'`
         )
-        .all(vendorId, invoiceId) as { account: string; tax: string }[];
-      const coding = suggestCoding(String(vendorId), past.map((p) => ({ vendorId: String(vendorId), accountCode: p.account, taxCode: p.tax })));
-      if (coding.status === "suggested") {
-        db.prepare(
-          "UPDATE invoice_lines SET gl_account_id = (SELECT id FROM gl_accounts WHERE code = ?), tax_code_id = (SELECT id FROM tax_codes WHERE code = ?) WHERE invoice_id = ?"
-        ).run(coding.accountCode, coding.taxCode, invoiceId);
-      }
-      writeAudit({ actorId, action: "invoice.coding_suggestion", entity: "invoice", entityId: invoiceId, after: coding });
+        .all(vendorId, invoiceId) as { invoiceId: number; description: string; accountCode: string }[];
+      const known = (code: string | null) => (code && db.prepare("SELECT 1 FROM gl_accounts WHERE code = ?").get(code) ? code : null); // an unknown default is no default
+      const defaultAccount = known((db.prepare("SELECT default_gl_account AS a FROM vendors WHERE id = ?").get(vendorId) as { a: string | null }).a);
+      // Department: the PO's when the invoice has one, else the requester's.
+      const deptId = po?.department_id ?? (db.prepare("SELECT u.department_id AS d FROM invoices i JOIN users u ON u.id = i.requester_id WHERE i.id = ?").get(invoiceId) as { d: number | null } | undefined)?.d ?? null;
+      const deptWhy = po?.department_id ? "PO department" : deptId ? "requester's department" : "no department known";
+      // Tax code per line from where the goods go (never copied from history); a vendor that charges no tax keeps its exempt code.
+      const taxCodes = (db.prepare("SELECT code, rate_bps, applies_to FROM tax_codes").all() as { code: string; rate_bps: number; applies_to: string | null }[]).map(
+        (c): TaxCodeRate => ({ code: c.code, rateE5: Math.round(c.rate_bps * 10), appliesTo: c.applies_to === "goods" ? "goods" : "all" })
+      );
+      const required = requiredTaxCodes(province ?? "", tax!.lineType, taxCodes);
+      const taxCode = tax!.gstCode && ["EXEMPT", "FOREIGN"].includes(tax!.gstCode) ? tax!.gstCode : required?.gstHst ?? null;
+      const taxWhy = taxCode ? `tax ${taxCode} for ${province} ${tax!.lineType}` : `no tax rules for province ${province ?? "(unknown)"}`;
+      const lines = db.prepare("SELECT id, description FROM invoice_lines WHERE invoice_id = ? ORDER BY line_no").all(invoiceId) as { id: number; description: string }[];
+      const update = db.prepare(
+        "UPDATE invoice_lines SET gl_account_id = (SELECT id FROM gl_accounts WHERE code = ?), tax_code_id = (SELECT id FROM tax_codes WHERE code = ?), department_id = ?, coding_source = ?, coding_reason = ?, coding_needed = ? WHERE id = ?"
+      );
+      const results = lines.map((l) => {
+        const c = codeLine(l.description, past, defaultAccount);
+        const account = c.status === "coded" ? c.accountCode : null;
+        update.run(account, taxCode, deptId, c.status === "coded" ? c.source : "none", `${c.reason}; ${taxWhy}; department: ${deptWhy}`, account ? 0 : 1, l.id);
+        return { lineId: l.id, ...c, taxCode, departmentId: deptId };
+      });
+      writeAudit({ actorId, action: "invoice.coding_suggestion", entity: "invoice", entityId: invoiceId, after: { lines: results } });
+      const missing = results.filter((r) => r.status === "coding_needed").length;
+      if (missing) flags.push(warning("coding_needed", `${missing} line(s) have no account; a clerk or manager must set it before approval`));
     }
 
     // Routing only matters if nothing needs a human first.

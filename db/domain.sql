@@ -164,6 +164,10 @@ CREATE TABLE IF NOT EXISTS invoice_lines (
   pst_qst_code TEXT,
   tax_code_id INTEGER REFERENCES tax_codes(id),
   tax_cents INTEGER NOT NULL DEFAULT 0,
+  -- Coding (T50): where the account came from, why, and whether a human still has to set it.
+  coding_source TEXT,
+  coding_reason TEXT,
+  coding_needed INTEGER NOT NULL DEFAULT 0 CHECK (coding_needed IN (0,1)),
   UNIQUE (invoice_id, line_no)
 );
 

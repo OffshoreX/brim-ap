@@ -81,6 +81,9 @@ export function decideInvoice(user: User, invoiceId: number, decision: Decision,
     const inv = db.prepare("SELECT status, requester_id FROM invoices WHERE id = ?").get(invoiceId) as { status: string; requester_id: number | null } | undefined;
     if (!inv) throw new ApprovalError(404, "Invoice not found");
     if (inv.status !== "pending_approval") throw new ApprovalError(409, `Invoice is ${inv.status}, not pending_approval`);
+    // An approval needs every line coded; a rejection does not.
+    if (decision === "approved" && db.prepare("SELECT 1 FROM invoice_lines WHERE invoice_id = ? AND coding_needed = 1").get(invoiceId))
+      throw new ApprovalError(409, "Some lines still need coding; a clerk or manager must set them first");
     // Checked first so a requester is refused even if the stored chain somehow named them.
     if (inv.requester_id === user.id) throw new ApprovalError(403, "You cannot decide an invoice you requested");
 

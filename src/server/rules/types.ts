@@ -30,11 +30,11 @@ export type ApprovalResult =
   | { status: 'routed'; approverId: string; delegated: boolean; delegatedFromId?: string; reason: string }
   | { status: 'needs_review'; reason: string };
 
-// Coding suggestion inputs: one past coded invoice.
-export type CodedInvoice = { vendorId: string; accountCode: string; taxCode: string };
+// Coding inputs: one past coded line of the vendor (invoiceId counts how many invoices the history spans).
+export type CodedLine = { invoiceId: number; description: string; accountCode: string };
 export type CodingResult =
-  | { status: 'suggested'; accountCode: string; taxCode: string; confidence: number; reason: string }
-  | { status: 'none'; reason: string };
+  | { status: 'coded'; source: 'history_description' | 'history_overall' | 'vendor_default'; accountCode: string; reason: string }
+  | { status: 'coding_needed'; reason: string };
 
 // Payment release inputs. Roles are plain strings so this file stays independent of contracts.
 // Tiers are ascending; upToCents null means no upper bound. A payment uses the first tier it fits.

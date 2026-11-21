@@ -37,7 +37,8 @@ beforeEach(() => {
       ('P02','approval','Invoice total over $10,000 CAD','dept_manager > finance_manager'),
       ('P03','approval','Invoice total over $50,000 CAD','dept_manager > finance_manager > controller_admin'),
       ('P04','approval','Invoice total over $250,000 CAD','dept_manager > finance_manager > controller_admin > cfo');
-    INSERT INTO vendors (id,name,bank_institution,bank_transit,bank_account) VALUES (1,'ACME Freight Inc','001','12345','123456789');
+    INSERT INTO gl_accounts (id,code,name) VALUES (5010,'5010','Freight');
+    INSERT INTO vendors (id,name,bank_institution,bank_transit,bank_account,default_gl_account) VALUES (1,'ACME Freight Inc','001','12345','123456789','5010');
     INSERT INTO vendor_bank_changes (vendor_id,changed_at,old_account_last4,new_account_last4,request_channel,verified_by_callback) VALUES (1,'2025-01-01','9999','6789','phone_callback_verified',1);
     INSERT INTO tax_codes (code,province,rate_bps,applies_to) VALUES ('HST13','ON',1300,'all');
     -- an earlier invoice gives the vendor a coding history, so the tax-line-type warning stays out of the results
