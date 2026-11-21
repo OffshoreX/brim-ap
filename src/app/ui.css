@@ -202,3 +202,7 @@ pre { overflow: auto; font-family: var(--mono); font-size: var(--fs-sm); }
   tr, .steps li, .panel { break-inside: avoid; }
   a { color: inherit; text-decoration: none; }
 }
+
+/* Previous / Next under a paged list */
+.pager { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s3); }
+.pager button:disabled { opacity: .5; cursor: not-allowed; }

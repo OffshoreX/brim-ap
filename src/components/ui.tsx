@@ -41,5 +41,3 @@ export const Skeleton = ({ rows = 4 }: { rows?: number }) => (
 export const ymd = (s: string | null | undefined) => (s ? s.slice(0, 10) : "—");
 export const stamp = (s: string | null | undefined) => (s ? s.replace("T", " ").slice(0, 16) : "—");
 
-// The newest date the demo data covers (src/server/replayHistory.ts AS_OF). Shown in the footer so numbers are not mistaken for live.
-export const DATA_AS_OF = "2026-11-02";

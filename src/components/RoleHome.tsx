@@ -8,10 +8,17 @@ import { Icon } from "./icons";
 
 // Looks only: where each role lands and which numbers it sees. The server still decides what each call may do.
 // `means` is the one plain line saying what the number counts, worded from the query behind it. `warn` counters turn amber above zero.
-type Counter = { label: string; url: string; value: (data: unknown) => string | number | undefined; href?: string; means: string; warn?: boolean };
+type Counter = { label: string; url: string; value: (data: unknown, total?: number) => string | number | undefined; href?: string; means: string; warn?: boolean };
 const list = (d: unknown) => (Array.isArray(d) ? d : undefined);
-const count = (d: unknown) => list(d)?.length;
-const withStatus = (status: string) => (d: unknown) => list(d)?.filter((i) => i?.status === status).length;
+// A list counter reads the server's total (X-Total-Count), never the length of one page.
+const count = (d: unknown, total?: number) => total ?? list(d)?.length;
+// Invoice counters come from /api/invoices/counts, which counts in the database with the same visibility as the list.
+type Counts = { total: number; byStatus: Record<string, number> };
+const COUNTS = "/api/invoices/counts";
+const total = (d: unknown) => (d as Counts | undefined)?.total;
+const withStatus = (status: string) => (d: unknown) => { const b = (d as Counts | undefined)?.byStatus; return b && (b[status] ?? 0); };
+// ponytail: payments has no server-side status filter yet, so this counts scheduled rows in the first page (50); ask engine for one.
+const paymentsWithStatus = (status: string) => (d: unknown) => list(d)?.filter((i) => i?.status === status).length;
 const dash = (key: string) => (d: unknown) => (d as Record<string, number> | undefined)?.[key];
 
 export const HOME: Record<Role, { path: string; about: string; counters: Counter[] }> = {
@@ -19,9 +26,9 @@ export const HOME: Record<Role, { path: string; about: string; counters: Counter
     path: "/invoices",
     about: "Submit an invoice below and follow it until it is paid.",
     counters: [
-      { label: "My invoices", url: "/api/invoices", value: count, means: "Invoices you submitted, in any status." },
-      { label: "Waiting for approval", url: "/api/invoices", value: withStatus("pending_approval"), means: "Your invoices whose status is Pending approval." },
-      { label: "Needs review", url: "/api/invoices", value: withStatus("needs_review"), means: "Your invoices whose status is Needs review: a check raised a flag and a clerk has not cleared it.", warn: true },
+      { label: "My invoices", url: COUNTS, value: total, means: "Invoices you submitted, in any status." },
+      { label: "Waiting for approval", url: COUNTS, value: withStatus("pending_approval"), means: "Your invoices whose status is Pending approval." },
+      { label: "Needs review", url: COUNTS, value: withStatus("needs_review"), means: "Your invoices whose status is Needs review: a check raised a flag and a clerk has not cleared it.", warn: true },
     ],
   },
   approver: {
@@ -29,8 +36,8 @@ export const HOME: Record<Role, { path: string; about: string; counters: Counter
     about: "Approve or reject the invoices waiting for you.",
     counters: [
       { label: "Waiting for me", url: "/api/approvals/inbox", value: count, href: "/approvals", means: "Invoices whose current approval step is assigned to you.", warn: true },
-      { label: "Pending approval (all)", url: "/api/invoices", value: withStatus("pending_approval"), href: "/invoices?status=pending_approval", means: "Every invoice you can see whose status is Pending approval." },
-      { label: "Rejected", url: "/api/invoices", value: withStatus("rejected"), href: "/invoices?status=rejected", means: "Invoices whose status is Rejected." },
+      { label: "Pending approval (all)", url: COUNTS, value: withStatus("pending_approval"), href: "/invoices?status=pending_approval", means: "Every invoice you can see whose status is Pending approval." },
+      { label: "Rejected", url: COUNTS, value: withStatus("rejected"), href: "/invoices?status=rejected", means: "Invoices whose status is Rejected." },
     ],
   },
   ap_clerk: {
@@ -38,8 +45,8 @@ export const HOME: Record<Role, { path: string; about: string; counters: Counter
     about: "Upload invoices, then clear the exceptions the checks flagged.",
     counters: [
       { label: "Flagged", url: "/api/exceptions", value: count, href: "/exceptions", means: "Invoices whose status is Needs review: each has at least one flag to clear.", warn: true },
-      { label: "Needs review", url: "/api/invoices", value: withStatus("needs_review"), href: "/invoices?status=needs_review", means: "Invoices whose status is Needs review.", warn: true },
-      { label: "Ready to pay", url: "/api/invoices", value: withStatus("approved"), href: "/payments", means: "Invoices whose status is Approved and not yet scheduled for payment." },
+      { label: "Needs review", url: COUNTS, value: withStatus("needs_review"), href: "/invoices?status=needs_review", means: "Invoices whose status is Needs review.", warn: true },
+      { label: "Ready to pay", url: COUNTS, value: withStatus("approved"), href: "/payments", means: "Invoices whose status is Approved and not yet scheduled for payment." },
     ],
   },
   finance_manager: {
@@ -47,8 +54,8 @@ export const HOME: Record<Role, { path: string; about: string; counters: Counter
     about: "Prepare and release payments; approvals waiting for you are in the queue.",
     counters: [
       { label: "Waiting for me", url: "/api/approvals/inbox", value: count, href: "/approvals", means: "Invoices whose current approval step is assigned to you.", warn: true },
-      { label: "Ready to pay", url: "/api/invoices", value: withStatus("approved"), href: "/payments", means: "Invoices whose status is Approved and not yet scheduled for payment." },
-      { label: "Ready to release", url: "/api/payments", value: withStatus("scheduled"), href: "/payments", means: "Payments whose status is Scheduled, waiting for you to release them." },
+      { label: "Ready to pay", url: COUNTS, value: withStatus("approved"), href: "/payments", means: "Invoices whose status is Approved and not yet scheduled for payment." },
+      { label: "Ready to release", url: "/api/payments", value: paymentsWithStatus("scheduled"), href: "/payments", means: "Payments whose status is Scheduled, waiting for you to release them." },
     ],
   },
   controller_admin: {
@@ -66,7 +73,7 @@ export const HOME: Record<Role, { path: string; about: string; counters: Counter
     counters: [
       { label: "Audit events (latest)", url: "/api/audit", value: count, means: "Events in the latest page of the audit log." },
       { label: "Payments", url: "/api/payments", value: count, href: "/payments", means: "Payments scheduled or settled." },
-      { label: "Invoices", url: "/api/invoices", value: count, href: "/invoices", means: "Every invoice, in any status." },
+      { label: "Invoices", url: COUNTS, value: total, href: "/invoices", means: "Every invoice, in any status." },
     ],
   },
 };
@@ -77,7 +84,7 @@ export async function loadCounters(role: Role) {
   const data = new Map(await Promise.all([...new Set(spec.map((c) => c.url))].map(async (u) => [u, await call(u)] as const)));
   return spec.map((c) => {
     const r = data.get(c.url)!;
-    return { label: c.label, href: c.href, value: r.error ? "–" : (c.value(r.data) ?? "–") };
+    return { label: c.label, href: c.href, value: r.error ? "–" : (c.value(r.data, r.total) ?? "–") };
   });
 }
 

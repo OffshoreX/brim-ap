@@ -70,7 +70,7 @@ import { runBatch, type Row } from "@/components/BatchUpload";
 const PAGES: [string, () => ReactNode, string][] = [
   ["login", Login, "Password"],
   ["dashboard", Dashboard, "/invoices?status=paid"], // headline numbers now come from RoleHome only
-  ["invoices", Invoices, "INV-1"],
+  ["invoices", Invoices, "Needs review"], // the rows load in the browser; the paging test is in components/pager.test.tsx
   ["invoice detail", InvoiceDetail, "Dana Approver"],
   ["approvals", Approvals, "Manager"],
   ["exceptions", Exceptions, "Tax is off"],
