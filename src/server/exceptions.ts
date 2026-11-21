@@ -104,5 +104,5 @@ export function resolveException(user: User, invoiceId: number, action: ResolveA
       after: { status, action, note },
     });
     return { invoiceId, status };
-  })();
+  }).immediate();
 }

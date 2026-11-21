@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import type { User } from "@/contracts";
 import { writeAudit } from "./audit";
 import { getDb } from "./db";
+import { idempotentAsync } from "./idempotency";
 import { inspectUpload, storeUpload, UploadError } from "./files";
 import { processInvoice } from "./pipeline";
 import type { Finding } from "./rules/types";
@@ -26,6 +28,7 @@ function readFlags(json: string): Finding[] {
 export function registerUpload(user: User, bytes: Buffer): { invoiceId: number; status: string; isNew: boolean } {
   const { sha, ext } = inspectUpload(bytes);
   const db = getDb();
+  // IMMEDIATE: the lookup and the insert hold the write lock, so two processes cannot both miss and both insert.
   return db.transaction(() => {
     const sourceFile = storeUpload(bytes, `${sha}.${ext}`);
     const existing = db.prepare("SELECT id, status FROM invoices WHERE source_file = ?").get(sourceFile) as { id: number; status: string } | undefined;
@@ -39,7 +42,7 @@ export function registerUpload(user: User, bytes: Buffer): { invoiceId: number; 
     );
     writeAudit({ actorId: user.id, action: "invoice.upload", entity: "invoice", entityId: id, before: null, after: { status: "received", sourceFile } });
     return { invoiceId: id, status: "received", isNew: true };
-  })();
+  }).immediate();
 }
 
 const snapshot = (invoiceId: number) => {
@@ -84,7 +87,13 @@ async function handleFile(user: User, file: string, bytes: Buffer): Promise<File
 }
 
 // Runs the files through handleFile, at most MAX_CONCURRENT at a time; results keep the input order.
-export async function uploadAndProcess(user: User, files: { name: string; bytes: Buffer }[]): Promise<UploadResponse> {
+// The same Idempotency-Key (and the same files) returns the first response instead of processing again.
+export function uploadAndProcess(user: User, files: { name: string; bytes: Buffer }[], key?: string | null): Promise<UploadResponse> {
+  const request = files.map((f) => [f.name, createHash("sha256").update(f.bytes).digest("hex")]);
+  return idempotentAsync(user.id, "invoice.upload", key, request, () => processFiles(user, files));
+}
+
+async function processFiles(user: User, files: { name: string; bytes: Buffer }[]): Promise<UploadResponse> {
   if (files.length === 0) throw new UploadError("No files uploaded");
   const results: FileResult[] = new Array(files.length);
   let next = 0;

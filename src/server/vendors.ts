@@ -81,7 +81,7 @@ export function requestBankChange(user: User, id: number, b: { institution?: unk
       .run(id, user.id, row.request_channel, row.old_account_last4, row.new_account_last4, (institution as string).trim(), (transit as string).trim(), (account as string).trim()).lastInsertRowid;
     writeAudit({ actorId: user.id, action: "vendor.bank_change_requested", entity: "vendor_bank_change", entityId: Number(rid), after: { vendorId: id, ...row, status: "pending" } });
     return { id: Number(rid), vendorId: id, status: "pending", oldLast4: row.old_account_last4, newLast4: row.new_account_last4 };
-  })();
+  }).immediate();
 }
 
 // Callback result. verified=true applies the change; verified=false marks it rejected and leaves the master alone.
@@ -91,7 +91,11 @@ export function verifyBankChange(user: User, vendorId: number, verified: boolean
     const req = db.prepare("SELECT * FROM vendor_bank_changes WHERE vendor_id = ? AND status = 'pending'").get(vendorId) as
       | { id: number; changed_by_user_id: number; new_bank_institution: string; new_bank_transit: string; new_bank_account: string; old_account_last4: string; new_account_last4: string }
       | undefined;
-    if (!req) throw new VendorError(404, "No pending bank change for this vendor");
+    if (!req) {
+      // A vendor that exists but has nothing pending means the request was already decided: a repeat verify is a 409.
+      if (!db.prepare("SELECT 1 FROM vendors WHERE id = ?").get(vendorId)) throw new VendorError(404, "Vendor not found");
+      throw new VendorError(409, "No pending bank change for this vendor (already verified or rejected)");
+    }
     // Separation of duties: the person who asked cannot be the person who confirms.
     if (req.changed_by_user_id === user.id) throw new VendorError(403, "You cannot verify your own bank-change request");
     if (!verified) {
@@ -110,5 +114,5 @@ export function verifyBankChange(user: User, vendorId: number, verified: boolean
     // Master change audited separately, last4 only so the full account never lands in the log.
     writeAudit({ actorId: user.id, action: "vendor.bank_updated", entity: "vendor", entityId: vendorId, before: { last4: req.old_account_last4 }, after: { last4: req.new_account_last4 } });
     return { id: req.id, vendorId, status: "applied" as const };
-  })();
+  }).immediate();
 }

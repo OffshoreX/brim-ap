@@ -1,4 +1,5 @@
 import { handle, requireRole } from "@/server/authz";
+import { IdempotencyError } from "@/server/idempotency";
 import { PaymentError, releasePayment } from "@/server/payments";
 
 export const POST = (request: Request) =>
@@ -9,9 +10,10 @@ export const POST = (request: Request) =>
     const paymentId = body?.paymentId;
     if (!Number.isInteger(paymentId)) return Response.json({ error: "paymentId must be an integer" }, { status: 400 });
     try {
-      return Response.json(releasePayment(user, paymentId));
+      return Response.json(releasePayment(user, paymentId, undefined, request.headers.get("idempotency-key")));
     } catch (e) {
       if (e instanceof PaymentError) return Response.json({ error: e.message }, { status: e.status });
+      if (e instanceof IdempotencyError) return Response.json({ error: e.message }, { status: e.status });
       throw e;
     }
   });
