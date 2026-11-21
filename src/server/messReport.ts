@@ -11,7 +11,8 @@ import { findDuplicates } from "./rules/duplicates";
 import { checkStoredFx, convertCents } from "./rules/fx";
 import { checkPoMatch } from "./rules/po";
 import { findSplitInvoices } from "./rules/split";
-import { checkTax, type TaxCodeRate, type TaxLine } from "./rules/tax";
+import { checkTaxAtSupply, resolveSupply } from "./rules/placeOfSupply";
+import type { TaxCodeRate, TaxLine } from "./rules/tax";
 import type { Finding } from "./rules/types";
 import { checkVendorStatus } from "./rules/vendorStatus";
 
@@ -45,7 +46,7 @@ type Invoice = {
   po_id: number | null; contract_id: number | null; ship_to_province: string | null; status: string; req_province: string | null; limit_cents: number | null;
 };
 type Line = { invoice_id: number; description: string; unit_price_cents: number; amount_cents: number; line_type: string | null; gst_hst_code: string | null; pst_qst_code: string | null };
-type Vendor = { id: number; name: string; status: string | null; requires_po: number | null; bank_institution: string | null; bank_transit: string | null; bank_account: string | null; bank_details_updated_at: string | null };
+type Vendor = { id: number; name: string; province_or_state: string | null; status: string | null; requires_po: number | null; bank_institution: string | null; bank_transit: string | null; bank_account: string | null; bank_details_updated_at: string | null };
 
 const SPLIT_WINDOW_DAYS = 7; // same window the pipeline uses
 const days = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000;
@@ -65,7 +66,7 @@ export function historyHits(): { hits: Hit[]; invoices: number } {
   const linesBy = new Map<number, Line[]>();
   for (const l of db.prepare("SELECT invoice_id, description, unit_price_cents, amount_cents, line_type, gst_hst_code, pst_qst_code FROM invoice_lines ORDER BY invoice_id, line_no").all() as Line[])
     linesBy.set(l.invoice_id, [...(linesBy.get(l.invoice_id) ?? []), l]);
-  const vendors = new Map((db.prepare("SELECT id, name, status, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at FROM vendors").all() as Vendor[]).map((v) => [v.id, v]));
+  const vendors = new Map((db.prepare("SELECT id, name, province_or_state, status, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at FROM vendors").all() as Vendor[]).map((v) => [v.id, v]));
   const codes = (db.prepare("SELECT code, rate_bps, applies_to FROM tax_codes").all() as { code: string; rate_bps: number; applies_to: string | null }[]).map(
     (c): TaxCodeRate => ({ code: c.code, rateE5: Math.round(c.rate_bps * 10), appliesTo: c.applies_to === "goods" ? "goods" : "all" })
   );
@@ -86,7 +87,8 @@ export function historyHits(): { hits: Hit[]; invoices: number } {
 
     add(checkArithmetic(lines.map((l) => ({ totalCents: l.amount_cents })), [{ amountCents: i.gst_hst_cents ?? 0 }, { amountCents: i.pst_qst_cents ?? 0 }], i.total_cents));
     const taxLines: TaxLine[] = lines.map((l) => ({ amountCents: l.amount_cents, lineType: l.line_type === "services" ? "services" : "goods", gstHstCode: l.gst_hst_code || null, pstQstCode: l.pst_qst_code || null }));
-    add(checkTax(taxLines, { gstHstCents: i.gst_hst_cents ?? 0, pstQstCents: i.pst_qst_cents ?? 0 }, i.ship_to_province ?? i.req_province ?? "(unknown)", codes));
+    // Same place-of-supply rule as the pipeline: the printed ship-to decides when there is one, else the guessed order applies.
+    add(checkTaxAtSupply(taxLines, { gstHstCents: i.gst_hst_cents ?? 0, pstQstCents: i.pst_qst_cents ?? 0 }, resolveSupply({ printed: i.ship_to_province, requester: i.req_province, vendor: v.province_or_state }), codes).findings);
     const key = (o: Invoice) => ({ id: String(o.id), vendorId: String(o.vendor_id), number: o.invoice_number, totalCents: o.total_cents, date: o.invoice_date, kind: (o.total_cents < 0 ? "credit_note" : "invoice") as "invoice" | "credit_note" });
     add(findDuplicates(key(i), before.filter((o) => o.invoice_number !== "").map(key)));
     add(checkVendorStatus(v.status));
@@ -137,7 +139,7 @@ export async function incomingHits(dir: string): Promise<{ hits: Hit[]; files: n
   const files = fs.readdirSync(dir).filter((f) => /\.(pdf|png|jpe?g)$/i.test(f)).sort();
   const hits: Hit[] = [];
   const notExtracted: string[] = [];
-  let noShipTo = 0; // extractions with no ship-to province: tax is then judged by the clerk's province, which inflates wrong-tax hits
+  let noShipTo = 0; // extractions with no ship-to province: their place of supply is guessed (PO requester, requester, vendor, clerk), so tax is a warning, not an error
   for (const file of files) {
     const { invoiceId } = registerUpload(clerk, fs.readFileSync(path.join(dir, file)));
     const res = await processInvoice(invoiceId, clerk.id);

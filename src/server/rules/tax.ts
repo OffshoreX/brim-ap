@@ -17,6 +17,7 @@ const PROVINCE_CODES: Record<string, { gstHst: string; pstQst: string | null }> 
   BC: { gstHst: 'GST5', pstQst: 'PST7_BC' },
   QC: { gstHst: 'GST5', pstQst: 'QST9975' },
 };
+export const TAX_PROVINCES = Object.keys(PROVINCE_CODES); // the provinces we have rules for
 const NO_TAX = ['EXEMPT', 'FOREIGN']; // valid in every province, carry no tax
 
 // The codes a line must carry in a province (same table checkTax judges by); null = no rules for that province.
