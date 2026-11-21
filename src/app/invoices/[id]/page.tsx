@@ -7,6 +7,7 @@ import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
 import { CAN_CLERK, CAN_DECIDE, CAN_RELEASE, useCan, useCurrentUser } from "@/components/CurrentUser";
 import { Empty, SeverityChip, StatusBadge, Table, ymd } from "@/components/ui";
 import { AuditTable, type AuditRow } from "@/components/AuditTable";
+import { StepsTable, type StepRow } from "@/components/ProcessSteps";
 
 type Line = { lineNo: number; description: string; quantity: number; unitPriceCents: number; amountCents: number; currency: string; taxCents: number | null; glCode: string | null };
 type Step = { stepNo: number; role: string; roleLabel: string; actorName: string | null; delegatedFromId: number | null; delegatedFromName: string | null; reason: string | null; status: string };
@@ -139,6 +140,12 @@ export default function InvoicePage() {
           );
         }}
       </Load>
+      <details>
+        <summary>How this was processed</summary>
+        <Load<StepRow[]> url={`/api/invoices/${id}/process-log?v=${version}`}>
+          {(rows) => rows.length === 0 ? <Empty>No processing steps were recorded for this invoice.</Empty> : <StepsTable rows={rows} />}
+        </Load>
+      </details>
       <details>
         <summary>Audit trail</summary>
         <Load<AuditRow[]> url={`/api/invoices/${id}/trail?v=${version}`}>

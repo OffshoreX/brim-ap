@@ -16,6 +16,7 @@ const DATA: Record<string, unknown> = {
     approvals: [], payments: [payment],
   },
   "/api/invoices/1/trail": [],
+  "/api/invoices/1/process-log": [],
   "/api/payments": [payment],
   "/api/payments/cheques": { cheques: [] },
   "/api/payments/ready": [{ invoiceId: 2, invoiceNumber: "INV-READY", vendorName: "Acme Freight", totalCents: 50000, currency: "CAD", dueDate: "2026-12-05", suggestedMethod: { method: "EFT", label: "EFT", reason: "Vendor's preferred method is EFT" }, earlyPayDiscountCents: null }],
