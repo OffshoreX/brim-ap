@@ -7,6 +7,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 const flag = { code: "tax_mismatch", message: "Tax is off", severity: "error" };
 const step = { stepNo: 1, role: "approver", roleLabel: "Approver", userId: 7, userName: "Dana Approver", actorName: "Dana Approver", delegatedFromId: null, delegatedFromName: null, reason: "Manager", status: "pending" };
+const stepRow = { id: 1, step: "tax", status: "flagged", detail: "Tax is off", durationMs: 4, createdAt: "2026-11-21 10:00:00" };
 const audit = { id: 1, at: "2026-11-21T10:00:00Z", actorId: 4, actorName: "Dana Clerk", action: "invoice.upload", entity: "invoice", entityId: "1", before: null, after: { status: "received" } };
 const vendor = { id: 3, name: "Acme Freight", category: "Freight", status: "active", address: "1 Main St", province_or_state: "QC", payment_terms_days: 30, preferred_payment_method: "EFT", bank_account_last4: "1234" };
 const payment = { id: 9, invoiceId: 1, invoiceNumber: "INV-1", vendorName: "Acme Freight", method: "EFT", methodLabel: "EFT", status: "scheduled", scheduledDate: "2026-12-01", paidAt: null, amountCents: 12345, currency: "CAD", reference: null };
@@ -23,6 +24,8 @@ const DATA: Record<string, unknown> = {
     approvalChain: [step], approvals: [{ id: 1, stepNo: 1, decision: "approved", decidedAt: "2026-11-02", comment: "ok" }], payments: [payment],
   },
   "/api/invoices/1/trail": [audit],
+  "/api/invoices/1/process-log": [stepRow],
+  "/api/process-log": [{ ...stepRow, invoiceId: 1, invoiceNumber: "INV-1" }],
   "/api/approvals/inbox": [{ invoiceId: 1, stepNo: 1, role: "approver", reason: "Manager", invoiceNumber: "INV-1", vendorName: "Acme Freight", totalCents: 10500, currency: "CAD", dueDate: "2026-12-01", ageDays: 3, delegatedFromId: null, flagCount: 1, topFlag: flag }],
   "/api/exceptions": [{ id: 1, invoiceNumber: "INV-1", vendorId: 3, totalCents: 10500, currency: "CAD", flags: [flag] }],
   "/api/reconciliation": { summary: { matched: 7, payment_unmatched: 1, payment_ambiguous: 0, amount_diff: 2, duplicate: 0, bank_no_payment: 0, card_no_payment: 0 }, total: 1, rows: [{ category: "matched", paymentId: 9, invoiceNumber: "INV-1", vendor: "Acme Freight", method: "EFT", paymentCents: 12345, lineSource: "bank", lineId: "B1", lineText: "ACME FREIGHT EFT", lineDate: "2026-12-01", lineCents: 12345, diffCents: null, note: "" }] },

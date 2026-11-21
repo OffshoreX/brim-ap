@@ -35,3 +35,10 @@ export const inboxClass = pick({
 
 export const vendorStatus = pick({ active: "Active", on_hold: "On hold", pending_review: "Pending review", inactive: "Inactive" });
 export const bankChangeStatus = pick({ pending: "Waiting for a callback", verified: "Verified", applied: "Verified and applied", rejected: "Rejected" });
+
+// Names for the processing steps the pipeline writes (src/server/pipeline.ts). The step's own sentence is shown beside it.
+export const stepName = pick({
+  extract: "Read the invoice", vendor_match: "Match the vendor", payment_terms: "Check payment terms", currency_conversion: "Convert currency", tax: "Check tax",
+  duplicates: "Look for duplicates", bank: "Check bank details", po_match: "Match the purchase order", contract_match: "Match the contract price", split: "Look for split invoices",
+  cross_payment: "Check other payments", budget_anomaly: "Check budget and usual amount", coding: "Suggest coding", approval_routing: "Route for approval",
+});

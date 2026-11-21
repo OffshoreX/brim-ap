@@ -4,6 +4,7 @@ import { useRef, useState, type DragEvent } from "react";
 import { Empty, StatusBadge, Table } from "./ui";
 import { Icon } from "./icons";
 import { Flags, sendFile, type Flag } from "./api";
+import { InvoiceSteps } from "./ProcessSteps";
 
 // Same shape as FileResult in src/server/upload.ts. `duplicate` is optional: the server does not send it yet (see PR).
 export type FileResult = { file: string; invoiceId: number | null; status: string; flags: Flag[]; error: string | null; duplicate?: boolean };
@@ -66,6 +67,12 @@ export default function BatchUpload() {
           </tbody>
         </Table>
       )}
+      {rows.map((r, i) => r.result?.invoiceId != null && (
+        <section key={i} aria-label={`Processing steps for ${r.name}`}>
+          <h2>Steps for {r.name}</h2>
+          <InvoiceSteps invoiceId={r.result.invoiceId} status={r.result.status} />
+        </section>
+      ))}
     </>
   );
 }

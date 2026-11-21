@@ -20,6 +20,7 @@ const LINKS: [string, string, Role[]][] = [
   ["/reports", "Reports", ["finance_manager", "controller_admin", "auditor"]],
   ["/reconciliation", "Reconciliation", ["finance_manager", "controller_admin", "auditor"]],
   ["/vendors", "Vendors", ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
+  ["/activity", "Activity", ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
   ["/audit", "Audit log", ["controller_admin", "auditor"]],
   ["/admin/approval-rules", "Approval rules", ["controller_admin"]],
   ["/inbox", "Inbox", ["ap_clerk", "controller_admin", "auditor"]],
