@@ -1,6 +1,7 @@
 "use client";
 import { StatusBadge, Table } from "@/components/ui";
 import { Load, money } from "@/components/api";
+import RoleHome from "@/components/RoleHome";
 
 type Dash = { countsByStatus: Record<string, number>; needsReview: number; dueThisWeekCadCents: number };
 
@@ -9,6 +10,7 @@ export default function DashboardPage() {
   return (
     <main>
       <h1>Dashboard</h1>
+      <RoleHome page="/dashboard" />
       <Load<Dash> url="/api/dashboard">
         {(d) => (
           <>

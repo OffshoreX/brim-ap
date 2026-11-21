@@ -2,6 +2,7 @@
 import { useState, type FormEvent } from "react";
 import { Empty, Table } from "@/components/ui";
 import { Load } from "@/components/api";
+import RoleHome from "@/components/RoleHome";
 
 type Row = { id: number; at: string; actorId: number | null; action: string; entity: string; entityId: string | null; before: unknown; after: unknown };
 
@@ -17,6 +18,7 @@ export default function AuditPage() {
   return (
     <main>
       <h1>Audit log</h1>
+      <RoleHome page="/audit" />
       <form onSubmit={apply} className="inline">
         <input name="entity" placeholder="Entity (invoice, payment…)" aria-label="Entity" />
         <input name="actor" type="number" min="1" placeholder="Actor id" aria-label="Actor id" />

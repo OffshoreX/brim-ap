@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import type { MeResponse, Role } from "@/contracts";
-import { post, useApi } from "./api";
+import { FORBIDDEN, post, useApi } from "./api";
 
 // Which links each role sees. Looks only: the server still answers 403 on any page or call the role may not use.
 const ALL: Role[] = ["employee", "ap_clerk", "approver", "finance_manager", "controller_admin", "auditor"];
@@ -25,11 +26,20 @@ export default function Header() {
   const path = usePathname();
   const { data, error } = useApi<MeResponse>(`/api/me?at=${encodeURIComponent(path)}`);
   const router = useRouter();
+  // A 403 from any call lands here as the server's own message; it clears when the page changes.
+  const [denied, setDenied] = useState<string>();
+  useEffect(() => {
+    const on = (e: Event) => setDenied((e as CustomEvent<string>).detail);
+    window.addEventListener(FORBIDDEN, on);
+    return () => window.removeEventListener(FORBIDDEN, on);
+  }, []);
+  useEffect(() => setDenied(undefined), [path]);
   async function signOut() {
     await post("/api/logout", {}); // clears the cookie; the login page works even if this fails
     router.push("/login");
   }
   return (
+    <>
     <header className="topbar">
       <strong className="brand">brim-ap</strong>
       <nav aria-label="Main">
@@ -42,5 +52,7 @@ export default function Header() {
         {data ? <button onClick={signOut}>Sign out</button> : <Link href="/login">Sign in</Link>}
       </span>
     </header>
+    {denied && <div role="alert" className="banner">{denied} <button onClick={() => setDenied(undefined)}>Dismiss</button></div>}
+    </>
   );
 }

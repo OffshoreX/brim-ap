@@ -3,18 +3,25 @@ import Link from "next/link";
 import { useState } from "react";
 import { INVOICE_STATUSES } from "@/contracts";
 import { Empty, StatusBadge, Table } from "@/components/ui";
-import { Load, money } from "@/components/api";
+import { Load, money, useApi } from "@/components/api";
+import RoleHome from "@/components/RoleHome";
+import BatchUpload from "@/components/BatchUpload";
+import type { MeResponse } from "@/contracts";
 
 type Item = { id: number; status: string; vendorId: number | null; invoiceNumber: string; invoiceDate: string; totalCents: number; currency: string };
 
 // GET /api/invoices. Uploading lives on /upload.
 export default function InvoicesPage() {
   const [status, setStatus] = useState("");
+  const role = useApi<MeResponse>("/api/me").data?.user.role;
 
   return (
     <main>
       <h1>Invoices</h1>
-      <p><Link href="/upload">Upload invoices</Link> (many files at once, with a result per file)</p>
+      <RoleHome page="/invoices" />
+      {role === "employee" ? (
+        <section className="panel"><h2>Submit invoice</h2><BatchUpload /></section>
+      ) : role && role !== "approver" && role !== "finance_manager" && role !== "auditor" && <p><Link href="/upload">Upload invoices</Link> (many files at once, with a result per file)</p>}
       <label>Status{" "}
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All</option>
