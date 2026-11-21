@@ -23,10 +23,11 @@ const DATA: Record<string, unknown> = {
     approvalChain: [step], approvals: [{ id: 1, stepNo: 1, decision: "approved", decidedAt: "2026-11-02", comment: "ok" }], payments: [payment],
   },
   "/api/invoices/1/trail": [audit],
-  "/api/approvals/inbox": [{ invoiceId: 1, stepNo: 1, role: "approver", reason: "Manager", invoiceNumber: "INV-1", totalCents: 10500, currency: "CAD", delegatedFromId: null }],
+  "/api/approvals/inbox": [{ invoiceId: 1, stepNo: 1, role: "approver", reason: "Manager", invoiceNumber: "INV-1", vendorName: "Acme Freight", totalCents: 10500, currency: "CAD", dueDate: "2026-12-01", ageDays: 3, delegatedFromId: null, flagCount: 1, topFlag: flag }],
   "/api/exceptions": [{ id: 1, invoiceNumber: "INV-1", vendorId: 3, totalCents: 10500, currency: "CAD", flags: [flag] }],
   "/api/reconciliation": { summary: { matched: 7, payment_unmatched: 1, payment_ambiguous: 0, amount_diff: 2, duplicate: 0, bank_no_payment: 0, card_no_payment: 0 }, total: 1, rows: [{ category: "matched", paymentId: 9, invoiceNumber: "INV-1", vendor: "Acme Freight", method: "EFT", paymentCents: 12345, lineSource: "bank", lineId: "B1", lineText: "ACME FREIGHT EFT", lineDate: "2026-12-01", lineCents: 12345, diffCents: null, note: "" }] },
   "/api/payments": [payment],
+  "/api/payments/ready": [{ invoiceId: 2, invoiceNumber: "INV-READY", vendorName: "Acme Freight", totalCents: 50000, currency: "CAD", dueDate: "2026-12-05", suggestedMethod: { method: "EFT", label: "EFT", reason: "Vendor's preferred method is EFT" }, earlyPayDiscountCents: null }],
   "/api/payments/cheques": { cheques: [{ paymentId: 9, invoiceNumber: "INV-1", vendor: "Acme Freight", address: "1 Main St", amountCents: 100, currency: "CAD", reference: "PAY-9" }] },
   "/api/vendors": [vendor],
   "/api/vendors/1": { ...vendor, bankChanges: [{ id: 1, changed_at: "2026-11-01", changed_by_user_id: 4, request_channel: "email", status: "pending", old_account_last4: "1234", new_account_last4: "9876", verified_by_user_id: null }] },
@@ -40,7 +41,7 @@ const DATA: Record<string, unknown> = {
 
 vi.mock("@/components/api", async (orig) => ({
   ...(await orig<typeof import("@/components/api")>()),
-  useApi: () => ({}),
+  useApi: (url: string | null) => ({ data: DATA[(url ?? "").split("?")[0]], reload: () => {} }),
   Load: ({ url, children }: { url: string | null; children: (d: unknown, reload: () => void) => ReactNode }) =>
     children(DATA[(url ?? "").split("?")[0]], () => {}),
 }));
@@ -75,6 +76,7 @@ const PAGES: [string, () => ReactNode, string][] = [
   ["approvals", Approvals, "Manager"],
   ["exceptions", Exceptions, "Tax is off"],
   ["payments", Payments, "PAY-9"],
+  ["payments ready list", Payments, "INV-READY"],
   ["vendors", Vendors, "Acme Freight"],
   ["vendor detail", VendorDetail, "Callback confirmed"],
   ["audit", Audit, "invoice.upload"],

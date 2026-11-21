@@ -206,3 +206,4 @@ pre { overflow: auto; font-family: var(--mono); font-size: var(--fs-sm); }
 /* Previous / Next under a paged list */
 .pager { display: flex; align-items: center; gap: var(--s3); margin-top: var(--s3); }
 .pager button:disabled { opacity: .5; cursor: not-allowed; }
+td .chip { margin: 0 var(--s1); } /* flag severity chip sits between the count and the reason text */
