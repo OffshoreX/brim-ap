@@ -1,16 +1,16 @@
 "use client";
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { Flags, Load, money, Notice, post, type Flag } from "@/components/api";
-import { Empty, StatusBadge, Table, stamp, ymd } from "@/components/ui";
-import { Icon } from "@/components/icons";
+import { FlagBox, Load, money, post, topFlag, type Flag } from "@/components/api";
+import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
+import { Empty, SeverityChip, StatusBadge, Table, stamp, ymd } from "@/components/ui";
 
 type Line = { lineNo: number; description: string; quantity: number; unitPriceCents: number; amountCents: number; currency: string; taxCents: number | null; glCode: string | null };
-type Step = { stepNo: number; role: string; userName: string | null; delegatedFromId: number | null; reason: string | null; status: string };
-type Pay = { id: number; method: string; status: string; scheduledDate: string | null; amountCents: number; currency: string; reference: string | null };
+type Step = { stepNo: number; role: string; roleLabel: string; actorName: string | null; delegatedFromId: number | null; delegatedFromName: string | null; reason: string | null; status: string };
+type Pay = { id: number; method: string; methodLabel: string; status: string; scheduledDate: string | null; amountCents: number; currency: string; reference: string | null };
 type Detail = {
   id: number; status: string; invoiceNumber: string; invoiceDate: string; dueDate: string | null; subtotalCents: number | null;
-  gstHstCents: number | null; pstQstCents: number | null; totalCents: number; currency: string; vendor: { name: string } | null;
+  gstHstCents: number | null; pstQstCents: number | null; totalCents: number; currency: string; vendorName: string | null;
   extraction: unknown; flags: Flag[]; lines: Line[]; approvalChain: Step[]; approvals: { id: number; stepNo: number; decision: string; decidedAt: string; comment: string | null }[]; payments: Pay[];
 };
 type Audit = { id: number; at: string; actorId: number | null; action: string; before: unknown; after: unknown };
@@ -19,45 +19,63 @@ type Audit = { id: number; at: string; actorId: number | null; action: string; b
 export default function InvoicePage() {
   const id = Number(useParams<{ id: string }>().id);
   const [version, setVersion] = useState(0);
-  const [msg, setMsg] = useState<{ ok?: string; error?: string }>({});
   const [comment, setComment] = useState("");
-  const [busy, setBusy] = useState(false); // a disabled fieldset greys out every action button while the request runs
-
-  async function act(url: string, body: unknown, done: string) {
-    setBusy(true);
-    const r = await post(url, body);
-    setBusy(false);
-    setMsg(r.error ? { error: r.error } : { ok: done });
-    if (!r.error) setVersion((v) => v + 1);
-  }
+  const a = useActions(() => setVersion((v) => v + 1));
+  const idem = (key: string) => ({ "idempotency-key": key });
+  const decide = (decision: "approved" | "rejected", text: string) => () => post(`/api/invoices/${id}/decision`, { decision, comment: text });
 
   return (
     <main id="main">
       <h1>Invoice {id}</h1>
       <Load<Detail> url={`/api/invoices/${id}?v=${version}`}>
-        {(d) => (
+        {(d) => {
+          const payee = d.vendorName ?? "unknown vendor";
+          const top = topFlag(d.flags);
+          return (
           <>
-            <p className="status-line">Status: <StatusBadge status={d.status} /></p>
-            {d.flags.length > 0 && (
-              <section className="flagbox" aria-label="Flags">
-                <h2>Why this needs attention ({d.flags.length})</h2>
-                <Flags flags={d.flags} />
-              </section>
-            )}
-            <fieldset className="row no-print" disabled={busy} aria-busy={busy}>
-              {d.status === "pending_approval" && (
-                <>
-                  <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Comment (optional)" aria-label="Comment" />
-                  <button onClick={() => act(`/api/invoices/${id}/decision`, { decision: "approved", comment }, "Approved")}><Icon name="approved" />Approve</button>
-                  <button className="secondary" onClick={() => act(`/api/invoices/${id}/decision`, { decision: "rejected", comment }, "Rejected")}><Icon name="rejected" />Reject</button>
-                </>
-              )}
-              {d.status === "approved" && <button onClick={() => act("/api/payments/prepare", { invoiceId: id }, "Payment prepared")}><Icon name="paid" />Prepare payment</button>}
-              {d.payments.filter((p) => p.status === "scheduled").map((p) => (
-                <button key={p.id} onClick={() => act("/api/payments/release", { paymentId: p.id }, `Payment ${p.id} released`)}><Icon name="paid" />Release payment {p.id}</button>
-              ))}
-            </fieldset>
-            <div className="no-print"><Notice {...msg} /></div>
+            <p className="only-print">Status: <StatusBadge status={d.status} /></p>
+            <section className="decisionbar no-print" aria-label="Decision">
+              <div className="decision-facts">
+                <p className="decision-line">
+                  <strong>{payee}</strong><span className="num"><strong>{money(d.totalCents, d.currency)}</strong></span><span>Due {ymd(d.dueDate)}</span><StatusBadge status={d.status} />
+                </p>
+                {top && (
+                  <p className={`decision-flag decision-flag-${top.severity ?? "warning"}`}>
+                    <SeverityChip severity={top.severity} /> {top.severity === "error" && <strong>Blocked: </strong>}{top.message}
+                    {d.flags.length > 1 && <span className="muted"> (and {d.flags.length - 1} more below)</span>}
+                  </p>
+                )}
+              </div>
+              <div className="decision-actions">
+                <div className="row">
+                  {d.status === "pending_approval" && (
+                    <>
+                      <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Comment (optional)" aria-label="Approval comment" />
+                      <ActionButton icon="approved" label="Approve" busyLabel="Approving…" ariaLabel={`Approve invoice ${d.invoiceNumber || id} from ${payee}`} busy={a.busyKey === "approve"} locked={a.locked}
+                        onClick={() => a.run("approve", decide("approved", comment), "Invoice approved")} />
+                      <ConfirmAction secondary icon="rejected" label="Reject" busyLabel="Rejecting…" ariaLabel={`Reject invoice ${d.invoiceNumber || id} from ${payee}`} busy={a.busyKey === "reject"} locked={a.locked}
+                        title="Confirm rejection" ask={{ label: "Reason for rejecting", required: true }}
+                        facts={[["Invoice", d.invoiceNumber || String(id)], ["Vendor", payee], ["Total", money(d.totalCents, d.currency)]]} confirmLabel={`Reject invoice from ${payee}`}
+                        onConfirm={(reason) => a.run("reject", decide("rejected", reason), "Invoice rejected")} />
+                    </>
+                  )}
+                  {d.status === "approved" && (
+                    <ActionButton icon="paid" label="Prepare payment" busyLabel="Preparing…" ariaLabel={`Prepare payment for invoice ${d.invoiceNumber || id} from ${payee}`} busy={a.busyKey === "prepare"} locked={a.locked}
+                      onClick={() => a.run("prepare", () => post("/api/payments/prepare", { invoiceId: id }, idem(crypto.randomUUID())), "Payment prepared")} />
+                  )}
+                  {d.payments.filter((p) => p.status === "scheduled").map((p) => {
+                    const amount = money(p.amountCents, p.currency);
+                    return (
+                      <ConfirmAction key={p.id} icon="paid" label={`Release payment ${p.id}`} busyLabel="Releasing…" ariaLabel={`Release payment ${p.id} to ${payee}`} busy={a.busyKey === `release-${p.id}`} locked={a.locked}
+                        title={`Confirm release of payment ${p.id}`} facts={[["Amount", amount], ["Payee", payee], ["Method", p.methodLabel], ["Scheduled", ymd(p.scheduledDate)]]} confirmLabel={`Release ${amount} to ${payee} via ${p.methodLabel}`}
+                        onConfirm={(_, key) => a.run(`release-${p.id}`, () => post("/api/payments/release", { paymentId: p.id }, idem(key)), `Payment ${p.id} released: ${amount} to ${payee} via ${p.methodLabel}`)} />
+                    );
+                  })}
+                </div>
+                {["approve", "reject", "prepare", ...d.payments.map((p) => `release-${p.id}`)].map((k) => <div key={k}>{a.show(k)}</div>)}
+              </div>
+            </section>
+            <FlagBox flags={d.flags} />
             <div className="split">
               <section className="panel">
                 <h2>File</h2>
@@ -66,7 +84,7 @@ export default function InvoicePage() {
               <section className="panel">
                 <h2>Extracted fields</h2>
                 <dl className="fields">
-                  <dt>Vendor</dt><dd>{d.vendor?.name ?? "—"}</dd>
+                  <dt>Vendor</dt><dd>{d.vendorName ?? "—"}</dd>
                   <dt>Invoice no.</dt><dd>{d.invoiceNumber || "—"}</dd>
                   <dt>Date</dt><dd>{ymd(d.invoiceDate)}</dd>
                   <dt>Due</dt><dd>{ymd(d.dueDate)}</dd>
@@ -92,20 +110,21 @@ export default function InvoicePage() {
             {d.approvalChain.length === 0 ? <Empty>No approval steps yet. They are created when the invoice is routed.</Empty> : (
               <ol className="steps">
                 {d.approvalChain.map((s) => {
-                  const done = d.approvals.find((a) => a.stepNo === s.stepNo);
+                  const done = d.approvals.find((x) => x.stepNo === s.stepNo);
                   return (
                     <li key={s.stepNo} className={`step-${done?.decision ?? "pending"}`}>
-                      <strong>Step {s.stepNo}: {s.role.replaceAll("_", " ")}</strong> — {s.userName ?? "unassigned"}{s.delegatedFromId ? " (delegate)" : ""}
+                      <strong>Step {s.stepNo}: {s.roleLabel}</strong> — {s.actorName ?? "unassigned"}{s.delegatedFromId ? ` · Delegate for ${s.delegatedFromName ?? "another approver"}` : ""}
                       {s.reason && <span className="muted"> · {s.reason}</span>}
                       <br />
-                      {done ? <>{done.decision} on {ymd(done.decidedAt)}{done.comment ? ` — “${done.comment}”` : ""}</> : <span className="muted">Waiting ({s.status})</span>}
+                      {done ? <>{done.decision.charAt(0).toUpperCase() + done.decision.slice(1)} on {ymd(done.decidedAt)}{done.comment ? ` — “${done.comment}”` : ""}</> : <span className="muted">{s.status === "pending" ? `Waiting for ${s.actorName ?? s.roleLabel}` : s.status}</span>}
                     </li>
                   );
                 })}
               </ol>
             )}
           </>
-        )}
+          );
+        }}
       </Load>
       <details>
         <summary>Audit trail</summary>

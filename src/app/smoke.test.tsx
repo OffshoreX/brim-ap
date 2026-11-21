@@ -6,10 +6,10 @@ import { renderToString } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vitest";
 
 const flag = { code: "tax_mismatch", message: "Tax is off", severity: "error" };
-const step = { stepNo: 1, role: "approver", userId: 7, userName: "Dana Approver", delegatedFromId: null, reason: "Manager", status: "pending" };
+const step = { stepNo: 1, role: "approver", roleLabel: "Approver", userId: 7, userName: "Dana Approver", actorName: "Dana Approver", delegatedFromId: null, delegatedFromName: null, reason: "Manager", status: "pending" };
 const audit = { id: 1, at: "2026-11-21T10:00:00Z", actorId: 4, action: "invoice.upload", entity: "invoice", entityId: "1", before: null, after: { status: "received" } };
 const vendor = { id: 3, name: "Acme Freight", category: "Freight", status: "active", address: "1 Main St", province_or_state: "QC", payment_terms_days: 30, preferred_payment_method: "EFT", bank_account_last4: "1234" };
-const payment = { id: 9, invoiceId: 1, invoiceNumber: "INV-1", method: "EFT", status: "scheduled", scheduledDate: "2026-12-01", paidAt: null, amountCents: 12345, currency: "CAD", reference: null };
+const payment = { id: 9, invoiceId: 1, invoiceNumber: "INV-1", vendorName: "Acme Freight", method: "EFT", methodLabel: "EFT", status: "scheduled", scheduledDate: "2026-12-01", paidAt: null, amountCents: 12345, currency: "CAD", reference: null };
 
 // One entry per endpoint path, shaped like the real responses.
 const DATA: Record<string, unknown> = {
@@ -18,7 +18,7 @@ const DATA: Record<string, unknown> = {
   "/api/invoices": [{ id: 1, status: "needs_review", vendorId: 3, invoiceNumber: "INV-1", invoiceDate: "2026-11-01", totalCents: 12345, currency: "CAD" }],
   "/api/invoices/1": {
     id: 1, status: "pending_approval", invoiceNumber: "INV-1", invoiceDate: "2026-11-01", dueDate: "2026-12-01", subtotalCents: 10000, gstHstCents: 500, pstQstCents: 0,
-    totalCents: 10500, currency: "CAD", vendor: { name: "Acme Freight" }, extraction: { total: 105 }, flags: [flag],
+    totalCents: 10500, currency: "CAD", vendorName: "Acme Freight", extraction: { total: 105 }, flags: [flag],
     lines: [{ lineNo: 1, description: "Freight", quantity: 1, unitPriceCents: 10000, amountCents: 10000, currency: "CAD", taxCents: 500, glCode: "6100" }],
     approvalChain: [step], approvals: [{ id: 1, stepNo: 1, decision: "approved", decidedAt: "2026-11-02", comment: "ok" }], payments: [payment],
   },

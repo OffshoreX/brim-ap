@@ -61,8 +61,8 @@ export function sendFile<T>(file: File, onSent: () => void): Promise<{ data?: T;
   });
 }
 
-export const post = <T,>(url: string, body: unknown) =>
-  call<T>(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+export const post = <T,>(url: string, body: unknown, headers?: Record<string, string>) =>
+  call<T>(url, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 
 // Loads a GET endpoint. Pass null to wait (e.g. until a filter is ready).
 export function useApi<T>(url: string | null) {
@@ -111,16 +111,37 @@ export function Notice({ ok, error }: { ok?: string; error?: string }) {
 export type Flag = { code: string; message: string; severity?: string };
 // Plain names for the budget and outlier warnings, shown before the server's own reason text.
 export const FLAG_TITLE: Record<string, string> = { department_over_budget: "Department over budget", amount_outlier: "Unusual amount for this vendor" };
+const RANK: Record<string, number> = { error: 0, warning: 1, info: 2 };
+const rank = (f: Flag) => RANK[f.severity ?? ""] ?? 1; // a flag with no or an unknown severity counts as a warning, like the server does
+// The worst flag first; ties keep the order the server sent.
+export const topFlag = (flags: Flag[]) => [...flags].sort((a, b) => rank(a) - rank(b))[0];
+export const worstSeverity = (flags: Flag[]): "error" | "warning" | "info" => (flags.length === 0 ? "info" : (["error", "warning", "info"] as const)[rank(topFlag(flags))]);
+
+// The reason is the message; the machine code follows it, small. An error says "Blocked" in words, not only in red.
 export function Flags({ flags }: { flags: Flag[] }) {
   if (flags.length === 0) return <p className="empty"><Icon name="approved" />No flags. Every check passed.</p>;
   return (
     <ul className="flags">
       {flags.map((f, i) => (
         <li key={i}>
-          <SeverityChip severity={f.severity} /> <code>{f.code}</code> {FLAG_TITLE[f.code] && <strong>{FLAG_TITLE[f.code]}: </strong>}{f.message}
+          <SeverityChip severity={f.severity} /> {f.severity === "error" && <strong>Blocked: </strong>}{FLAG_TITLE[f.code] && <strong>{FLAG_TITLE[f.code]}: </strong>}{f.message} <small className="muted"><code>{f.code}</code></small>
         </li>
       ))}
     </ul>
+  );
+}
+
+// Panel that takes the colour of its worst flag: red "Blocked", amber "Needs attention", blue "For information".
+const FLAGBOX_TITLE = { error: "Blocked", warning: "Why this needs attention", info: "For information" };
+export function FlagBox({ flags }: { flags: Flag[] }) {
+  if (flags.length === 0) return null;
+  const worst = worstSeverity(flags);
+  return (
+    <section className={`flagbox flagbox-${worst}`} aria-label="Flags">
+      <h2>{FLAGBOX_TITLE[worst]} ({flags.length})</h2>
+      {worst === "error" && <p>Resolve the problem below before this invoice goes any further.</p>}
+      <Flags flags={flags} />
+    </section>
   );
 }
 
