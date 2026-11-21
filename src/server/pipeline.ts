@@ -34,7 +34,7 @@ export class PipelineError extends Error {
   }
 }
 
-const MIME: Record<string, string> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg" };
+const MIME: Record<string, string> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", webp: "image/webp" };
 const error = (code: string, message: string): Finding => ({ code, message, severity: "error" });
 const warning = (code: string, message: string): Finding => ({ code, message, severity: "warning" });
 

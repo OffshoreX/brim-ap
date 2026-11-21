@@ -32,7 +32,7 @@ fs.rmSync("data/batch-uploads", { recursive: true, force: true });
 
 const { getDb } = await import("../src/server/db.ts");
 const { importDataset } = await import("../src/server/importDataset.ts");
-const { uploadInvoices } = await import("../src/server/invoices.ts");
+const { registerUpload } = await import("../src/server/upload.ts");
 const { processInvoice } = await import("../src/server/pipeline.ts");
 
 const db = getDb();
@@ -46,7 +46,7 @@ const rows = [];
 // One at a time: duplicate, split and PO checks look at invoices already stored, so order matters.
 for (const file of files) {
   try {
-    const [{ invoiceId }] = uploadInvoices(CLERK, [fs.readFileSync(path.join(dir, file))]);
+    const { invoiceId } = registerUpload(CLERK, fs.readFileSync(path.join(dir, file)));
     const res = await processInvoice(invoiceId, CLERK.id);
     const inv = db.prepare("SELECT v.name AS vendor FROM invoices i LEFT JOIN vendors v ON v.id = i.vendor_id WHERE i.id = ?").get(invoiceId);
     rows.push({ file, vendorMatched: inv.vendor ? "y" : "n", vendor: inv.vendor ?? "", status: res.status, flags: res.flags.map((f) => f.code) });
