@@ -3,10 +3,12 @@ import path from "node:path";
 import { beforeEach, describe, expect, test } from "vitest";
 import { getDb, resetDbForTests } from "@/server/db";
 import { signSession } from "@/server/session";
+import { hashPassword } from "@/server/password";
 import { MATRIX, ROLES } from "./authz-matrix";
 
 process.env.SESSION_SECRET = "test-secret";
 process.env.DB_PATH = ":memory:";
+process.env.DEMO_PERSONA_PICKER = "1"; // the matrix calls /api/users and login; the off state has its own tests below
 
 const API_DIR = path.join(process.cwd(), "src/app/api");
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -96,12 +98,47 @@ describe("cookie integrity", () => {
   test("terminated user cannot log in and an old cookie stops working", async () => {
     const cookie = `session=${signSession(userId("approver"))}`;
     expect((await me(cookie)).status).toBe(200);
-    getDb().prepare("UPDATE users SET status='terminated' WHERE id = ?").run(userId("approver"));
+    getDb().prepare("UPDATE users SET status='terminated', email='t@x.example', password_hash=? WHERE id = ?").run(hashPassword("pw"), userId("approver"));
     expect((await me(cookie)).status).toBe(401);
-    const login = (await import("@/app/api/login/route")).POST;
-    const res = await login(new Request("http://x/api/login", { method: "POST", body: JSON.stringify({ userId: userId("approver") }) }));
-    expect(res.status).toBe(403);
+    const res = await passwordLogin("t@x.example", "pw"); // right password, still refused
+    expect(res.status).toBe(401);
     expect(res.headers.get("set-cookie")).toBeNull();
+  });
+});
+
+const passwordLogin = async (email: string, password: string) =>
+  (await import("@/app/api/login/route")).POST(new Request("http://x/api/login", { method: "POST", headers: { "x-forwarded-for": "5.5.5.5" }, body: JSON.stringify({ email, password }) }));
+
+describe("password login (no persona picker)", () => {
+  beforeEach(() => {
+    delete process.env.DEMO_PERSONA_PICKER;
+    getDb().prepare("UPDATE users SET email = id || '@x.example', password_hash = ?").run(hashPassword("pw"));
+  });
+  const cookieFor = async (role: string) => (await passwordLogin(`${userId(role)}@x.example`, "pw")).headers.get("set-cookie")!.split(";")[0];
+
+  test("each role signs in by password and then gets exactly the access the matrix gives it", async () => {
+    for (const role of ROLES) {
+      const cookie = await cookieFor(role);
+      expect((await call("me", "GET", cookie)).status).toBe(200);
+      expect((await call("admin/ping", "GET", cookie)).status).toBe(role === "controller_admin" ? 200 : 403);
+    }
+  });
+  test("a tampered cookie from a real login is still rejected", async () => {
+    const good = await cookieFor("employee");
+    const [id, sig] = good.replace("session=", "").split(".");
+    for (const c of [`session=${id}.${sig.slice(0, -1)}A`, `session=${userId("controller_admin")}.${sig}`, `${good}.x`])
+      expect((await call("me", "GET", c)).status).toBe(401);
+  });
+  test("role is read from the DB on every request, so a demotion applies to an existing login", async () => {
+    const cookie = await cookieFor("controller_admin");
+    getDb().prepare("UPDATE users SET role='auditor' WHERE id = ?").run(userId("controller_admin"));
+    expect((await call("admin/ping", "GET", cookie)).status).toBe(403);
+  });
+  test("the old login-by-userId path is 404 and sets no cookie while the picker is off", async () => {
+    const res = await (await import("@/app/api/login/route")).POST(new Request("http://x/api/login", { method: "POST", body: JSON.stringify({ userId: userId("controller_admin") }) }));
+    expect(res.status).toBe(404);
+    expect(res.headers.get("set-cookie")).toBeNull();
+    expect((await call("users", "GET")).status).toBe(404);
   });
 });
 

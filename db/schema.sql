@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','on_leave','terminated')),
   status_since TEXT,
   delegate_user_id INTEGER REFERENCES users(id),
-  hire_date TEXT
+  hire_date TEXT,
+  password_hash TEXT -- scrypt hash from src/server/password.ts, never the password
 );
 
 -- before/after hold JSON text so any entity can be logged by one table.

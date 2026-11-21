@@ -7,6 +7,7 @@ import { POST as login } from "@/app/api/login/route";
 
 process.env.SESSION_SECRET = "test-secret";
 process.env.DB_PATH = ":memory:";
+process.env.DEMO_PERSONA_PICKER = "1"; // these tests cover the old login-by-userId path; login.test.ts covers it being off
 
 const req = (cookie?: string) =>
   new Request("http://x/api/admin/ping", { headers: cookie ? { cookie } : {} });

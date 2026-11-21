@@ -13,9 +13,10 @@ export class HttpError extends Error {
 export function requireRole(request: Request, allowedRoles: readonly Role[]): User {
   const id = verifySession(readCookie(request, COOKIE_NAME));
   if (id === null) throw new HttpError(401, "Not signed in");
-  const user = getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as (User & { status?: string }) | undefined; // status is not in the contracts User type
+  const user = getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as (User & { status?: string; password_hash?: string | null }) | undefined; // status is not in the contracts User type
   // A terminated user's old cookie must stop working at once, so status is read from the DB on every call.
   if (!user || user.status === "terminated") throw new HttpError(401, "Not signed in");
+  delete user.password_hash; // /api/me returns this object, so the hash must never leave here
   if (!allowedRoles.includes(user.role)) throw new HttpError(403, "Forbidden");
   return user;
 }
