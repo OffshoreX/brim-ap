@@ -51,6 +51,13 @@ export function invoiceDetail(user: User, id: number) {
   const vendor = db
     .prepare("SELECT id, name, category, status, payment_terms_days AS paymentTermsDays, province_or_state AS province, currency FROM vendors WHERE id = ?")
     .get(inv.vendor_id) ?? null;
+  // The email this invoice came from, if any (written by the inbox import).
+  const sourceEmail = db
+    .prepare(
+      `SELECT m.email_id AS emailId, m.from_address AS "from", m.subject, m.received_at AS receivedAt
+       FROM invoice_email e JOIN inbox_mail m ON m.email_id = e.email_id WHERE e.invoice_id = ?`
+    )
+    .get(id) ?? null;
   const lines = db
     .prepare(
       `SELECT l.line_no AS lineNo, l.line_type AS lineType, l.description, l.quantity, l.unit_price_cents AS unitPriceCents,
@@ -91,6 +98,7 @@ export function invoiceDetail(user: User, id: number) {
     totalCadCents: inv.total_cad_cents,
     requesterId: inv.requester_id,
     sourceFile: inv.source_file,
+    sourceEmail,
     extraction: parseJson(inv.extraction_json as string | null),
     flags: parseFlags(inv.flags as string),
     vendor,

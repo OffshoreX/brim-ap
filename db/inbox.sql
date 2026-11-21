@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS inbox_mail (
   from_address TEXT NOT NULL,
   subject TEXT NOT NULL,
   received_at TEXT,
-  class TEXT NOT NULL CHECK (class IN ('invoice','credit_note','statement','payment_inquiry','marketing','invoice_missing_attachment')),
+  class TEXT NOT NULL CHECK (class IN ('invoice','credit_note','statement','payment_inquiry','marketing','invoice_missing_attachment','bank_change','suspicious')),
   attachments TEXT NOT NULL DEFAULT '[]',
   flags TEXT NOT NULL DEFAULT '[]'
 );

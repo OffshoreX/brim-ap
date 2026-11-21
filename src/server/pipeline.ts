@@ -199,9 +199,6 @@ function bankFindings(db: Db, v: Vendor, text: string, invoiceDate: string): Fin
     changes,
     today()
   );
-  // A request still waiting for its callback is not on file yet: say so, so a clerk knows why the account differs.
-  const pending = db.prepare("SELECT 1 FROM vendor_bank_changes WHERE vendor_id = ? AND status = 'pending' AND new_account_last4 = ?").get(v.id, bank.account.slice(-4));
-  if (pending) out.push(error("bank_change_unverified", "Vendor bank change not yet verified by callback"));
   return out;
 }
 
@@ -326,6 +323,9 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
         )
       );
       if (x.bankDetails) flags.push(...bankFindings(db, vendor, x.bankDetails, x.invoiceDate));
+      // A request still waiting for its callback is not on file yet. Whatever account this invoice shows, hold it until a finance user verifies.
+      if (db.prepare("SELECT 1 FROM vendor_bank_changes WHERE vendor_id = ? AND status = 'pending'").get(vendorId))
+        flags.push(error("bank_change_unverified", "Vendor bank change not yet verified by callback"));
 
       if (isCredit) flags.push(...creditFindings(db, x, vendorId, invoiceId));
       else {
