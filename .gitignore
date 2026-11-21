@@ -4,3 +4,7 @@ node_modules
 data/raw
 *.db
 .DS_Store
+
+# local run output and design-tool working files
+data/
+.impeccable/
