@@ -2,14 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { extractInvoice, type ExtractedInvoice, type ExtractResult } from "@/extract/extractInvoice";
 import { writeAudit } from "./audit";
-import { loadApprovalRules } from "./approvalRules";
+import { createChain } from "./approvals";
 import { getDb } from "./db";
 import { transition } from "./invoiceStatus";
 import { checkArithmetic } from "./rules/arithmetic";
 import { checkBankChange } from "./rules/bank";
 import { suggestCoding } from "./rules/coding";
 import { findDuplicates } from "./rules/duplicates";
-import { routeApproval } from "./rules/approval";
 import type { Finding } from "./rules/types";
 
 // Response types live here, not in contracts.ts (lead-owned).
@@ -148,22 +147,12 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
 
     // Routing only matters if nothing needs a human first.
     if (flags.some((f) => f.severity === "error")) return finish(flags, null);
-    const inv = db.prepare("SELECT department, requester_id FROM invoices WHERE id = ?").get(invoiceId) as {
-      department: string | null; requester_id: number | null;
-    };
-    const rows = db.prepare("SELECT id, role, manager_id, approval_limit_cents, status, delegate_user_id FROM users").all() as {
-      id: number; role: string; manager_id: number | null; approval_limit_cents: number; status: string; delegate_user_id: number | null;
-    }[];
-    const opt = (id: number | null) => (id === null ? undefined : String(id));
-    const users = rows.map((u) => ({
-      id: String(u.id), role: u.role, managerId: opt(u.manager_id), limitCents: u.approval_limit_cents,
-      onLeave: u.status === "on_leave", delegateId: opt(u.delegate_user_id),
-    }));
-    const requester = users.find((u) => u.id === String(inv.requester_id)) ?? { id: "", role: "", limitCents: 0 };
-    // Same inputs as decideInvoice, so the approver named here is the one it will accept.
-    const route = routeApproval({ totalCents: x.totalCents, department: inv.department ?? "" }, requester, users, loadApprovalRules());
-    writeAudit({ actorId, action: "invoice.routed", entity: "invoice", entityId: invoiceId, after: route });
-    if (route.status !== "routed") return finish([...flags, error("routing_failed", route.reason)], null);
-    return finish(flags, Number(route.approverId));
+    // The chain is stored as pending steps; if nobody can fill a step, a human looks at it.
+    try {
+      const steps = createChain(invoiceId, actorId);
+      return finish(flags, Number(steps[0].userId));
+    } catch (e) {
+      return finish([...flags, error("routing_failed", e instanceof Error ? e.message : "approval routing failed")], null);
+    }
   })();
 }
