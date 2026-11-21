@@ -29,3 +29,9 @@ export type ApprovalRule = { minCents: number; maxCents: number; department?: st
 export type ApprovalResult =
   | { status: 'routed'; approverId: string; delegated: boolean; delegatedFromId?: string; reason: string }
   | { status: 'needs_review'; reason: string };
+
+// Coding suggestion inputs: one past coded invoice.
+export type CodedInvoice = { vendorId: string; accountCode: string; taxCode: string };
+export type CodingResult =
+  | { status: 'suggested'; accountCode: string; taxCode: string; confidence: number; reason: string }
+  | { status: 'none'; reason: string };
