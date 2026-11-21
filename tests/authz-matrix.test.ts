@@ -151,6 +151,6 @@ describe("row-level rules", () => {
       ((await (await call("invoices", "GET", `session=${signSession(userId(role))}`)).json()) as { id: number }[] | { invoices: { id: number }[] });
     const list = async (role: string) => { const j = await ids(role); return (Array.isArray(j) ? j : j.invoices).map((i) => i.id); };
     expect(await list("employee")).toEqual([1]);
-    expect(await list("auditor")).toEqual([1, 2]);
+    expect(await list("auditor")).toEqual([2, 1]);
   });
 });

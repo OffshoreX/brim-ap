@@ -19,6 +19,7 @@ export const MATRIX: [string, string, Access][] = [
   ["me",                                 "GET",   ALL],
   ["dashboard",                          "GET",   ALL],
   ["invoices",                           "GET",   ALL],
+  ["invoices/counts",                    "GET",   ALL],
   ["invoices/[id]",                      "GET",   ALL],
   ["invoices/[id]/trail",                "GET",   ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
   ["invoices/[id]/decision",             "POST",  APPROVERS],
