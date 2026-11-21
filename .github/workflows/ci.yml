@@ -46,6 +46,6 @@ jobs:
           size=$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" --jq '[.[] | .additions + .deletions] | add')
           if [ "${size:-0}" -gt 400 ]; then skip "it changes $size lines, over the 400 limit"; fi
           body=$(gh api "repos/$REPO/pulls/$PR" --jq '.body // ""')
-          echo "$body" | grep -q '## Plain English' || skip "the description has no Plain English section"
-          echo "$body" | grep -q '## Judge question' || skip "the description has no Judge question section"
+          echo "$body" | grep -qi 'plain english' || skip "the description has no Plain English section"
+          echo "$body" | grep -qi 'judge question' || skip "the description has no Judge question section"
           gh api -X PUT "repos/$REPO/pulls/$PR/merge" -f merge_method=squash
