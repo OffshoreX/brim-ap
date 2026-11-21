@@ -26,7 +26,7 @@ test("flag severities show a text label and fall back to info", () => {
 test("nav shows only links useful to the role, and none before sign-in", () => {
   const names = (r?: Parameters<typeof linksFor>[0]) => linksFor(r).map(([, n]) => n);
   expect(names()).toEqual([]);
-  expect(names("employee")).toEqual(["Dashboard", "Invoices"]);
+  expect(names("employee")).toEqual(["Dashboard", "Invoices", "Upload"]);
   expect(names("controller_admin")).toContain("Approval rules");
   expect(names("approver")).not.toContain("Approval rules");
 });

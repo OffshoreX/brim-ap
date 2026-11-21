@@ -67,3 +67,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 form.inline, .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
 pre { overflow: auto; }
 @media (max-width: 800px) { .split { grid-template-columns: 1fr; } .preview { height: 24rem; } h1 { font-size: 1.3rem; } }
+.dropzone { border: 2px dashed var(--line); border-radius: 8px; padding: 1rem; text-align: center; background: var(--card); margin: .5rem 0 1rem; }
+.tabs { display: flex; gap: .25rem; flex-wrap: wrap; margin: .5rem 0; }
+.tabs button[aria-selected="true"] { font-weight: 700; border-bottom: 3px solid currentColor; }
+.tabs button[aria-selected="false"] { background: #fff; color: var(--accent); }
