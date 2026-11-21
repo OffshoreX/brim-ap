@@ -5,6 +5,8 @@ import { writeAudit } from "./audit";
 import { createChain } from "./approvals";
 import { getDb } from "./db";
 import { transition } from "./invoiceStatus";
+import { budgetAndAnomalyFlags } from "./budgetAnomaly";
+import { AS_OF } from "./replayHistory";
 import { checkArithmetic } from "./rules/arithmetic";
 import { checkVendorBankRisk, readInvoiceBank, type BankChangeRow } from "./rules/bank";
 import { suggestCoding } from "./rules/coding";
@@ -362,6 +364,9 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
             flags.push(...findSplitInvoices({ id: String(invoiceId), vendorId: String(vendorId), totalCents: totalCadCents, date: x.invoiceDate }, recent, ctx.limitCents, SPLIT_WINDOW_DAYS));
           }
           flags.push(...crossFindings(db, vendor, invoiceId, x.invoiceDate, totalCadCents));
+          // Warnings only (bonus rules): a department over its budget so far, and an amount far above this vendor's usual.
+          const requesterId = (db.prepare("SELECT requester_id AS r FROM invoices WHERE id = ?").get(invoiceId) as { r: number | null }).r;
+          flags.push(...budgetAndAnomalyFlags(db, { invoiceId, vendorId, requesterId, totalCadCents, asOf: AS_OF }));
         }
       }
 
