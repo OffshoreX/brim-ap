@@ -35,6 +35,7 @@ test("rows with an error flag say Open to review; others can be approved in plac
   const html = renderToString(<InboxTable rows={rows} reload={noop} />);
   expect(html.match(/Open to review/g)).toHaveLength(1);
   expect(html.match(/aria-label="Approve /g)).toHaveLength(2);
+  expect(html).not.toContain("Confirm approval"); // Approve is one locked click, not a confirm step
 });
 
 test("default order is by due date, soonest first, missing dates last", () => {

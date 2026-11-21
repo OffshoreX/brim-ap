@@ -108,3 +108,18 @@ test("blocked invoice (needs review) links to Exceptions and names who can resol
   expect(auditor).not.toContain('href="/exceptions"');
   expect(auditor).toContain("AP clerks, finance managers and controllers can resolve this.");
 });
+
+// T68: reject and bank-change callbacks go through ConfirmAction (nothing is sent on the first click); Approve and Send to approval are locked single clicks.
+test("vendor callbacks name the vendor and both accounts, and sit behind a confirm", () => {
+  const html = render(<Vendor />);
+  expect(html).toContain('aria-label="Callback confirmed for Acme Ltd, change …1234 to …9876"');
+  expect(html).toContain('aria-label="Callback failed for Acme Ltd, reject change to …9876"');
+  expect(html).not.toContain("Confirm the callback"); // the step only opens after a click
+});
+
+test("exceptions: Reject is confirmed, Send to approval is a locked single click", () => {
+  const html = render(<Exceptions />);
+  expect(html).toContain('aria-label="Reject invoice INV-1"');
+  expect(html).toContain('aria-label="Send invoice INV-1 to approval"');
+  expect(html).not.toContain("Confirm rejection");
+});

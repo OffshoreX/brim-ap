@@ -37,6 +37,7 @@ export function useActions(onSuccess: () => void) {
     busyKey,
     locked: busyKey !== null, // every action button on the page is disabled while any request runs
     run: async (key: string, send: () => Promise<{ error?: string }>, ok: string) => { if (await runLocked(lock, key, send, ok, ui)) onSuccess(); },
+    fail: (key: string, error: string) => setResults((all) => ({ ...all, [key]: { error } })), // a refusal made in the browser (missing note), no request sent
     show: (key: string) => <ActionResult result={results[key] ?? {}} onDismiss={() => setResults((all) => ({ ...all, [key]: {} }))} />,
   };
 }

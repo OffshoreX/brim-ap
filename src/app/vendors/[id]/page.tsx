@@ -2,7 +2,8 @@
 import { useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { Table, ymd } from "@/components/ui";
-import { Load, Notice, post } from "@/components/api";
+import { Load, post } from "@/components/api";
+import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
 import { CAN_CLERK, CAN_RELEASE, useCan, useCurrentUser } from "@/components/CurrentUser";
 
 type Change = { id: number; changed_at: string; changed_by_user_id: number | null; request_channel: string | null; status: string; old_account_last4: string | null; new_account_last4: string | null; verified_by_user_id: number | null; verified_by_callback: number; verified_at: string | null };
@@ -16,24 +17,21 @@ export default function VendorPage() {
   const { role } = useCurrentUser();
   const canVerify = useCan(CAN_RELEASE);
   const canRequest = useCan(CAN_CLERK);
-  const [msg, setMsg] = useState<{ ok?: string; error?: string }>({});
-
-  async function act(url: string, body: unknown, done: string) {
-    const r = await post(url, body);
-    setMsg(r.error ? { error: r.error } : { ok: done });
-    if (!r.error) setVersion((v) => v + 1);
-  }
+  const a = useActions(() => setVersion((v) => v + 1)); // one request at a time; results stay at the bottom until dismissed
+  const verify = (verified: boolean, key: string, ok: string) => a.run(key, () => post(`/api/vendors/${id}/bank-change/verify`, { verified }), ok);
   function request(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.currentTarget));
-    act(`/api/vendors/${id}/bank-change`, f, "Bank change requested. Another user must verify it by callback.");
+    a.run("request", () => post(`/api/vendors/${id}/bank-change`, f), "Bank change requested. Another user must verify it by callback.");
   }
 
   return (
     <main id="main">
       <h1>Vendor {id}</h1>
       <Load<Vendor> url={`/api/vendors/${id}?v=${version}`}>
-        {(v) => (
+        {(v) => {
+          const acct = (c: Change) => [["Vendor", v.name], ["Account now", `…${c.old_account_last4}`], ["Account after", `…${c.new_account_last4}`]] as [string, string][];
+          return (
           <>
             <Table><tbody>
               <tr><th>Name</th><td>{v.name}</td></tr><tr><th>Category</th><td>{v.category}</td></tr><tr><th>Status</th><td>{v.status}</td></tr>
@@ -53,8 +51,13 @@ export default function VendorPage() {
                     <td>
                       {canVerify && c.status === "pending" && (
                         <>
-                          <button onClick={() => act(`/api/vendors/${id}/bank-change/verify`, { verified: true }, "Change verified and applied")}>Callback confirmed</button>
-                          <button className="secondary" onClick={() => act(`/api/vendors/${id}/bank-change/verify`, { verified: false }, "Change rejected")}>Callback failed</button>
+                          <ConfirmAction icon="approved" label="Callback confirmed" busyLabel="Applying…" ariaLabel={`Callback confirmed for ${v.name}, change …${c.old_account_last4} to …${c.new_account_last4}`} busy={a.busyKey === `verify-${c.id}`} locked={a.locked}
+                            title="Confirm the callback" facts={acct(c)} confirmLabel={`Apply: pay ${v.name} to …${c.new_account_last4}`}
+                            onConfirm={() => verify(true, `verify-${c.id}`, `Bank account for ${v.name} changed from …${c.old_account_last4} to …${c.new_account_last4}`)} />
+                          <ConfirmAction secondary icon="rejected" label="Callback failed" busyLabel="Rejecting…" ariaLabel={`Callback failed for ${v.name}, reject change to …${c.new_account_last4}`} busy={a.busyKey === `reject-${c.id}`} locked={a.locked}
+                            title="Reject the bank change" facts={acct(c)} confirmLabel={`Reject: keep paying …${c.old_account_last4}`}
+                            onConfirm={() => verify(false, `reject-${c.id}`, `Bank change for ${v.name} rejected; payments still go to …${c.old_account_last4}`)} />
+                          {a.show(`verify-${c.id}`)}{a.show(`reject-${c.id}`)}
                         </>
                       )}
                     </td>
@@ -63,7 +66,8 @@ export default function VendorPage() {
               </tbody>
             </Table>
           </>
-        )}
+          );
+        }}
       </Load>
       <h2>Request a bank change</h2>
       {role && !canRequest && <p className="muted">Only AP clerks, finance managers and controllers can request a bank change.</p>}
@@ -72,9 +76,9 @@ export default function VendorPage() {
         <input name="transit" placeholder="Transit" required aria-label="Transit" />
         <input name="account" placeholder="Account number" required aria-label="Account number" />
         <input name="channel" placeholder="How was it requested? (email, phone…)" required aria-label="Request channel" />
-        <button type="submit">Request change</button>
+        <ActionButton submit label="Request change" busyLabel="Requesting…" busy={a.busyKey === "request"} locked={a.locked} />
       </form>}
-      <Notice {...msg} />
+      {a.show("request")}
     </main>
   );
 }
