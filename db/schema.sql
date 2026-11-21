@@ -19,3 +19,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
   before TEXT,
   after TEXT
 );
+
+-- The audit trail is append-only: edits and deletes are blocked in the database itself.
+CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log
+BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
