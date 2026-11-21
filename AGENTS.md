@@ -55,7 +55,7 @@ Every PR description has two parts:
 ## 5. Secrets and checks
 
 - Keys live in .env.local (gitignored). Model API calls come from server routes only. Never print a key.
-- The dataset lives in data/raw/ (gitignored) until we know whether the repo must be public.
+- The synthetic Brim dataset lives in brim_ap_dataset/ and is committed to this private repo so every agent worktree can read it. Never read it from outside the repo. If the repo must become public, remove the dataset first.
 - Before opening a PR, run the lint, test and build scripts that exist, and state in the PR which ones you ran and the result.
 
 ## 6. Do not
