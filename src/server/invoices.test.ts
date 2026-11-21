@@ -49,7 +49,7 @@ test("upload stores file by hash, creates received invoice owned by uploader, au
   expect(out.map((r: { duplicate: boolean }) => r.duplicate)).toEqual([false, false]);
   const rows = getDb().prepare("SELECT * FROM invoices").all() as { status: string; requester_id: number; source_file: string }[];
   expect(rows.map((r) => [r.status, r.requester_id])).toEqual([["received", 1], ["received", 1]]);
-  expect(fs.readdirSync(dir).sort().map((f) => path.extname(f))).toEqual([".pdf", ".png"]);
+  expect(fs.readdirSync(dir).map((f) => path.extname(f)).sort()).toEqual([".pdf", ".png"]);
   expect(getDb().prepare("SELECT * FROM audit_log WHERE action='invoice.upload'").all()).toHaveLength(2);
 });
 
