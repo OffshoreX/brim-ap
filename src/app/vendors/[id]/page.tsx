@@ -2,8 +2,8 @@
 import { useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { Table, ymd } from "@/components/ui";
-import type { MeResponse } from "@/contracts";
-import { Load, Notice, post, useApi } from "@/components/api";
+import { Load, Notice, post } from "@/components/api";
+import { CAN_CLERK, CAN_RELEASE, useCan, useCurrentUser } from "@/components/CurrentUser";
 
 type Change = { id: number; changed_at: string; changed_by_user_id: number | null; request_channel: string | null; status: string; old_account_last4: string | null; new_account_last4: string | null; verified_by_user_id: number | null; verified_by_callback: number; verified_at: string | null };
 type Vendor = { id: number; name: string; category: string | null; status: string | null; address: string | null; province_or_state: string | null; payment_terms_days: number | null; preferred_payment_method: string | null; bank_account_last4: string; bankChanges: Change[] };
@@ -12,9 +12,10 @@ type Vendor = { id: number; name: string; category: string | null; status: strin
 export default function VendorPage() {
   const id = Number(useParams<{ id: string }>().id);
   const [version, setVersion] = useState(0);
-  // Hiding the buttons is for looks only: the verify route allows finance_manager and controller_admin and refuses the requester.
-  const role = useApi<MeResponse>("/api/me").data?.user.role;
-  const canVerify = role === "finance_manager" || role === "controller_admin";
+  // Hiding the buttons is for looks only: the server decides. The verify route allows finance_manager and controller_admin and refuses the requester.
+  const { role } = useCurrentUser();
+  const canVerify = useCan(CAN_RELEASE);
+  const canRequest = useCan(CAN_CLERK);
   const [msg, setMsg] = useState<{ ok?: string; error?: string }>({});
 
   async function act(url: string, body: unknown, done: string) {
@@ -41,6 +42,7 @@ export default function VendorPage() {
               <tr><th>Bank account</th><td>…{v.bank_account_last4}</td></tr>
             </tbody></Table>
             <h2>Bank changes</h2>
+            {role && !canVerify && v.bankChanges.some((c) => c.status === "pending") && <p className="muted">Only finance managers and controllers can verify a bank change.</p>}
             <Table>
               <thead><tr><th>When</th><th>Channel</th><th>Old</th><th>New</th><th>Status</th><th>Verified</th><th></th></tr></thead>
               <tbody>
@@ -64,13 +66,14 @@ export default function VendorPage() {
         )}
       </Load>
       <h2>Request a bank change</h2>
-      <form onSubmit={request} className="inline">
+      {role && !canRequest && <p className="muted">Only AP clerks, finance managers and controllers can request a bank change.</p>}
+      {canRequest && <form onSubmit={request} className="inline">
         <input name="institution" placeholder="Institution" required aria-label="Institution" />
         <input name="transit" placeholder="Transit" required aria-label="Transit" />
         <input name="account" placeholder="Account number" required aria-label="Account number" />
         <input name="channel" placeholder="How was it requested? (email, phone…)" required aria-label="Request channel" />
         <button type="submit">Request change</button>
-      </form>
+      </form>}
       <Notice {...msg} />
     </main>
   );

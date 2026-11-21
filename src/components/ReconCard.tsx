@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
-import type { MeResponse } from "@/contracts";
 import { Icon } from "./icons";
 import { useApi } from "./api";
+import { useCurrentUser } from "./CurrentUser";
 import { Skeleton } from "./ui";
 
 type Summary = { summary: Record<string, number> };
@@ -11,7 +11,7 @@ const ALLOWED = ["finance_manager", "controller_admin", "auditor"];
 
 // One card, one link. A failed call says so by name; it never renders nothing.
 export default function ReconCard() {
-  const role = useApi<MeResponse>("/api/me").data?.user.role;
+  const { role } = useCurrentUser();
   const { data, error } = useApi<Summary>(role && ALLOWED.includes(role) ? "/api/reconciliation?limit=1" : null);
   if (!role || !ALLOWED.includes(role)) return null;
   if (error) return <p role="alert" className="error-box">Reconciliation summary could not load (GET /api/reconciliation): {error}</p>;

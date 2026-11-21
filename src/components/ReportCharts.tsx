@@ -1,6 +1,6 @@
 "use client";
-import type { MeResponse } from "@/contracts";
-import { Load, money, useApi } from "./api";
+import { Load, money } from "./api";
+import { useCurrentUser } from "./CurrentUser";
 import { BarChart, ReportSection } from "./Charts";
 import { Empty, Table } from "./ui";
 
@@ -83,8 +83,8 @@ export function DiscountsPanel() {
 
 // Dashboard add-on: only asks for the reports when the role may read them (display only; the server still decides).
 export default function DashboardCharts() {
-  const { data } = useApi<MeResponse>("/api/me");
-  if (!data || !REPORT_ROLES.includes(data.user.role)) return null;
+  const { role } = useCurrentUser();
+  if (!role || !REPORT_ROLES.includes(role)) return null;
   return (
     <div className="charts">
       <ReportSection title="AP aging" csv={{ href: "/api/reports/aging?format=csv", filename: "aging.csv" }}><AgingPanel /></ReportSection>

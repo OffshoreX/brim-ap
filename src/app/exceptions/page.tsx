@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Empty, SeverityChip, Table } from "@/components/ui";
 import { FLAG_TITLE, Load, money, Notice, post, type Flag } from "@/components/api";
+import { CAN_CLERK, useCan, useCurrentUser } from "@/components/CurrentUser";
 
 type Item = { id: number; invoiceNumber: string; totalCents: number; currency: string; flags: Flag[] };
 
@@ -23,6 +24,8 @@ export function groupByCode(items: Item[], severity: string) {
 function ExceptionRow({ item, done }: { item: Item; done: () => void }) {
   const [note, setNote] = useState("");
   const [msg, setMsg] = useState<{ ok?: string; error?: string }>({});
+  const { role } = useCurrentUser();
+  const canResolve = useCan(CAN_CLERK); // looks only: the resolve route checks the role and that the invoice still needs review
   async function resolve(action: "send_to_approval" | "reject") {
     if (!note.trim()) return setMsg({ error: "Write a note first: it goes in the audit log." });
     const r = await post(`/api/exceptions/${item.id}/resolve`, { action, note: note.trim() });
@@ -35,10 +38,12 @@ function ExceptionRow({ item, done }: { item: Item; done: () => void }) {
       <td className="num">{money(item.totalCents, item.currency)}</td>
       <td>{item.flags.map((f) => (FLAG_TITLE[f.code] ? `${FLAG_TITLE[f.code]}: ${f.message}` : f.message)).join("; ")}</td>
       <td>
+        {role && !canResolve ? <p className="muted">Only AP clerks, finance managers and controllers can resolve this.</p> : canResolve && <>
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (required)" aria-label={`Note for invoice ${item.id}`} />
         <button onClick={() => resolve("send_to_approval")}>Send to approval</button>
         <button className="secondary" onClick={() => resolve("reject")}>Reject</button>
         <Notice {...msg} />
+        </>}
       </td>
     </tr>
   );

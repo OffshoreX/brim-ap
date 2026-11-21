@@ -1,10 +1,11 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import { Empty, StatusBadge, Table, ymd } from "@/components/ui";
-import { download, Load, money, post, useApi } from "@/components/api";
+import { download, Load, money, post } from "@/components/api";
 import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
 import RoleHome from "@/components/RoleHome";
-import type { MeResponse, Role } from "@/contracts";
+import type { Role } from "@/contracts";
+import { useCurrentUser } from "@/components/CurrentUser";
 
 type Pay = { id: number; invoiceId: number; invoiceNumber: string; vendorName: string | null; method: string; methodLabel: string; status: string; scheduledDate: string | null; paidAt: string | null; amountCents: number; currency: string; reference: string | null };
 type Cheque = { paymentId: number; invoiceNumber: string; vendor: string | null; address: string | null; amountCents: number; currency: string; reference: string | null };
@@ -24,7 +25,7 @@ function Release({ p, a }: { p: Pay; a: ReturnType<typeof useActions> }) {
 export default function PaymentsPage() {
   const [version, setVersion] = useState(0);
   // Hiding is for looks; the server answers 403 to anything the role may not do.
-  const role = useApi<MeResponse>("/api/me").data?.user.role;
+  const { role } = useCurrentUser();
   const can = (...r: Role[]) => !!role && r.includes(role);
   const a = useActions(() => setVersion((v) => v + 1));
   function prepare(e: FormEvent<HTMLFormElement>) {

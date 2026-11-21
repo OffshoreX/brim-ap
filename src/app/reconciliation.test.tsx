@@ -2,7 +2,6 @@
 import { renderToString } from "react-dom/server";
 import { afterEach, expect, test, vi } from "vitest";
 
-let me: { data?: unknown } = {};
 let users: { data?: unknown } = {};
 let summary: { data?: unknown; error?: string } = {};
 const asked: (string | null)[] = [];
@@ -11,16 +10,17 @@ vi.mock("@/components/api", async (orig) => ({
   ...(await orig<typeof import("@/components/api")>()),
   useApi: (url: string | null) => {
     asked.push(url);
-    return url === "/api/me" ? me : url === "/api/users" ? users : summary;
+    return url === "/api/users" ? users : summary;
   },
 }));
 
 import { call, download, post } from "@/components/api";
+import { asRole } from "@/components/asRole";
 import ReconCard from "@/components/ReconCard";
 import Login from "./login/page";
 import Reconciliation from "./reconciliation/page";
 
-afterEach(() => { vi.unstubAllGlobals(); asked.length = 0; me = {}; users = {}; summary = {}; });
+afterEach(() => { vi.unstubAllGlobals(); asked.length = 0; users = {}; summary = {}; });
 
 test("login: no Demo panel when the server hides the user list", () => {
   const html = renderToString(<Login />);
@@ -55,12 +55,10 @@ test("reconciliation: counters render once the summary loads", () => {
 });
 
 test("dashboard card only asks the server for roles that may read it", () => {
-  me = { data: { user: { role: "employee" } } };
-  expect(renderToString(<ReconCard />)).toBe("");
+  expect(renderToString(asRole("employee", <ReconCard />))).toBe("");
   expect(asked).not.toContain("/api/reconciliation?limit=1");
-  me = { data: { user: { role: "auditor" } } };
   summary = { data: { summary: { matched: 5, payment_unmatched: 1, payment_ambiguous: 0, amount_diff: 2, duplicate: 0, bank_no_payment: 0, card_no_payment: 0 } } };
-  const html = renderToString(<ReconCard />);
+  const html = renderToString(asRole("auditor", <ReconCard />));
   expect(html).toContain("Reconciled payments");
   expect(html).toContain("<strong>3</strong>");
 });

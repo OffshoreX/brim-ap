@@ -3,17 +3,17 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { INVOICE_STATUSES } from "@/contracts";
 import { Empty, STATUS_LABEL, StatusBadge, Table, ymd } from "@/components/ui";
-import { Load, money, useApi } from "@/components/api";
+import { Load, money } from "@/components/api";
+import { useCurrentUser } from "@/components/CurrentUser";
 import RoleHome from "@/components/RoleHome";
 import BatchUpload from "@/components/BatchUpload";
-import type { MeResponse } from "@/contracts";
 
 type Item = { id: number; status: string; vendorId: number | null; invoiceNumber: string; invoiceDate: string; totalCents: number; currency: string };
 
 // GET /api/invoices. Uploading lives on /upload.
 export default function InvoicesPage() {
   const [status, setStatus] = useState("");
-  const role = useApi<MeResponse>("/api/me").data?.user.role;
+  const { role } = useCurrentUser();
   // The dashboard links here with ?status=...; read it on the client (no Suspense needed) and ignore unknown values.
   useEffect(() => {
     const s = new URLSearchParams(window.location.search).get("status");
