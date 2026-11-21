@@ -108,6 +108,14 @@ test("changed bank details go to needs_review with a bank flag", async () => {
   expect(codes(id)).toContain("bank_differs_from_master");
 });
 
+test("any invoice from a vendor with a pending bank change is held, even when it shows the old account", async () => {
+  getDb().prepare("INSERT INTO vendor_bank_changes (vendor_id,changed_at,old_account_last4,new_account_last4,status) VALUES (1,'2026-11-01','6789','7777','pending')").run();
+  ok(); // invoice shows the account on file, not the new one
+  const id = makeInvoice();
+  expect((await (await run(id)).json()).status).toBe("needs_review");
+  expect(codes(id)).toContain("bank_change_unverified");
+});
+
 test("invoice with a still-pending new bank account is flagged as unverified", async () => {
   getDb().prepare("INSERT INTO vendor_bank_changes (vendor_id,changed_at,old_account_last4,new_account_last4,status) VALUES (1,'2026-11-01','6789','7777','pending')").run();
   ok({ bankDetails: "001-12345-777777777" });

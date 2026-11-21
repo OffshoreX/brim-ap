@@ -2,23 +2,52 @@ import fs from "node:fs";
 import path from "node:path";
 import type { User } from "@/contracts";
 import { writeAudit } from "./audit";
+import { requestBankChange, VendorError } from "./vendors";
 import { getDb } from "./db";
 import { inspectUpload, storeUpload } from "./files";
 import { DEFAULT_PAGE, type Page } from "./paging";
 
-export type EmailClass = "invoice" | "credit_note" | "statement" | "payment_inquiry" | "marketing" | "invoice_missing_attachment";
+export type EmailClass = "invoice" | "credit_note" | "statement" | "payment_inquiry" | "marketing" | "invoice_missing_attachment" | "bank_change" | "suspicious";
 export type Email = { email_id: string; from_address: string; subject: string; received_at?: string; body: string; attachments: string[] };
-export type Classified = { class: EmailClass; attachments: string[] };
+// reason is set for "suspicious" (why); bank is set for "bank_change" when the details could be read.
+export type Classified = { class: EmailClass; attachments: string[]; reason?: string; bank?: { institution: string; transit: string; account: string } };
 
 // Lowercase and strip accents so "Relevé" and "crédit" match plain-ASCII rules.
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+// Mail that tries to instruct the system. Each rule has a short reason the clerk reads in the inbox list.
+const SUSPICIOUS: [RegExp, string][] = [
+  [/\burgent|\bpay(ment)?\b[^.]{0,20}\b(now|immediately|today|asap)\b|paye[zr]\b[^.]{0,20}\b(maintenant|immediatement)/, "urgent: asks for payment now"],
+  [/\b(skip|bypass|waive|ignore|override|without|no need for)\b[^.]{0,30}\b(approval|approver|review|verification|callback|polic)/, "asks to skip approval or verification"],
+  [/\b(send|wire|transfer|pay|remit)\w*\b[^.]{0,40}\b(to|into) (the |our )?(new|different|another) (bank )?account/, "tells us to pay a new account"],
+];
+// A notice that the vendor's bank details changed. Becomes a request only from a known sender (see below).
+const BANK_CHANGE = /\b(change|update|replac|switch|new)\w*\b[^.]{0,40}\b(bank|banking|remittance) (details|account|information)|\bnew (bank )?account\b|coordonnees bancaires/;
+
+// Institution, transit, account as labelled text or as 3-5-7+ digits. Anything else is not guessed.
+export function parseBankText(text: string) {
+  const t = norm(text);
+  const labelled = [t.match(/institution\D{0,15}(\d{3})\b/), t.match(/transit\D{0,15}(\d{5})\b/), t.match(/account\D{0,20}(\d{7,12})\b/)];
+  if (labelled.every(Boolean)) return { institution: labelled[0]![1], transit: labelled[1]![1], account: labelled[2]![1] };
+  const m = t.match(/\b(\d{3})[\s-](\d{5})[\s-](\d{7,12})\b/);
+  return m ? { institution: m[1], transit: m[2], account: m[3] } : null;
+}
+
 // Plain keyword rules, English and French. No LLM: the same email always gets the same class.
-export function classifyEmail(email: Email): Classified {
+// senderVendorIds = vendors whose ap_contact_email equals the sender (empty if the sender is unknown).
+export function classifyEmail(email: Email, senderVendorIds: number[] = []): Classified {
   const attachments = email.attachments ?? [];
   const subject = norm(email.subject ?? "");
   const text = `${subject} ${norm(email.body ?? "")}`;
   const has = (re: RegExp) => re.test(text);
+  // Instructions come first: an invoice that also says "pay now, skip approval" is not processed.
+  const hit = SUSPICIOUS.find(([re]) => has(re));
+  if (hit) return { class: "suspicious", attachments, reason: hit[1] };
+  if (has(BANK_CHANGE)) {
+    // Only one known vendor sender may ask. Unknown or shared sender addresses could be anyone.
+    if (senderVendorIds.length !== 1) return { class: "suspicious", attachments, reason: "bank change from an unknown sender" };
+    return { class: "bank_change", attachments, bank: parseBankText(email.body ?? "") ?? undefined };
+  }
   if (attachments.length > 0) {
     if (has(/\bstatement\b|\breleve de compte/) && !has(/\binvoice\b|\bfacture\b/)) return { class: "statement", attachments };
     // "CN-" is how the dataset marks credit notes in invoice numbers.
@@ -50,10 +79,25 @@ export function importInbox(user: User, emails: Email[] = readEmails()): ImportR
     emails.map((email): ImportResult => {
       if (db.prepare("SELECT 1 FROM inbox_mail WHERE email_id = ?").get(email.email_id))
         return { emailId: email.email_id, class: "invoice", invoiceIds: [], flags: [], skipped: "already_imported" };
-      const c = classifyEmail(email);
+      const senders = db.prepare("SELECT id FROM vendors WHERE lower(ap_contact_email) = lower(?)").all(email.from_address ?? "") as { id: number }[];
+      const c = classifyEmail(email, senders.map((v) => v.id));
       const flags: string[] = [];
       const invoiceIds: number[] = [];
       if (c.class === "invoice_missing_attachment") flags.push("missing_attachment");
+      if (c.class === "suspicious") flags.push(`suspicious: ${c.reason}`); // nothing else happens to this mail
+      let bankChangeId: number | undefined;
+      if (c.class === "bank_change") {
+        // Same workflow as a clerk typing it in: pending, verified_by_callback = 0, a different user must verify. The email text never edits the vendor.
+        if (!c.bank) flags.push("bank_details_unreadable");
+        else
+          try {
+            bankChangeId = requestBankChange(user, senders[0].id, { ...c.bank, channel: `email:${email.email_id}` }).id;
+            flags.push(`bank_change_request:${bankChangeId}`);
+          } catch (e) {
+            if (!(e instanceof VendorError)) throw e;
+            flags.push(`bank_change_not_created: ${e.message}`);
+          }
+      }
       db.prepare("INSERT INTO inbox_mail (email_id, from_address, subject, received_at, class, attachments, flags) VALUES (?,?,?,?,?,?,?)")
         .run(email.email_id, email.from_address, email.subject, email.received_at ?? null, c.class, JSON.stringify(c.attachments), "[]");
       if (c.class === "invoice" || c.class === "credit_note") {
@@ -90,7 +134,7 @@ export function importInbox(user: User, emails: Email[] = readEmails()): ImportR
         }
       }
       db.prepare("UPDATE inbox_mail SET flags = ? WHERE email_id = ?").run(JSON.stringify(flags), email.email_id);
-      writeAudit({ actorId: user.id, action: "inbox.import", entity: "inbox_mail", entityId: email.email_id, before: null, after: { class: c.class, invoiceIds, flags } });
+      writeAudit({ actorId: user.id, action: "inbox.import", entity: "inbox_mail", entityId: email.email_id, before: null, after: { class: c.class, invoiceIds, flags, ...(bankChangeId ? { bankChangeId } : {}) } });
       return { emailId: email.email_id, class: c.class, invoiceIds, flags };
     })
   )();
@@ -108,5 +152,10 @@ export function listOtherMail(page: Page = DEFAULT_PAGE) {
        WHERE ${OTHER_WHERE} ORDER BY email_id LIMIT ? OFFSET ?`
     )
     .all(page.limit, page.offset) as { email_id: string; from_address: string; subject: string; received_at: string | null; class: string; attachments: string; flags: string }[];
-  return rows.map((r) => ({ emailId: r.email_id, from: r.from_address, subject: r.subject, receivedAt: r.received_at, class: r.class, attachments: JSON.parse(r.attachments), flags: JSON.parse(r.flags) }));
+  return rows.map((r) => {
+    const flags: string[] = JSON.parse(r.flags);
+    // Suspicious mail says why; everything else has no reason.
+    const reason = flags.find((f) => f.startsWith("suspicious: "))?.slice(12) ?? null;
+    return { emailId: r.email_id, from: r.from_address, subject: r.subject, receivedAt: r.received_at, class: r.class, reason, attachments: JSON.parse(r.attachments), flags };
+  });
 }
