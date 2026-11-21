@@ -8,6 +8,8 @@
   --warn:#7c3f06; --warn-bg:#fff4e0; --warn-line:#f0b45f;
   --bad:#991b1b; --bad-bg:#fdecec; --bad-line:#f2a3a3;
   --info:#1e3a8a; --info-bg:#eaf1ff; --info-line:#9db8f2;
+  /* chart fills: graphics need 3:1 on white, so text beside a bar stays --ink. Not near enough to --accent, --ok or --warn to share them. */
+  --chart-total:#2563eb; --chart-taken:#059669; --chart-missed:#d97706;
   /* spacing scale */
   --s1:.25rem; --s2:.5rem; --s3:.75rem; --s4:1rem; --s5:1.5rem; --s6:2.5rem;
   /* shape and depth */
@@ -71,6 +73,7 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .badge-received, .chip-info { background: var(--info-bg); color: var(--info); border-color: var(--info-line); }
 .badge-needs_review, .badge-pending_approval, .chip-warning { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-line); }
 .badge-approved, .badge-scheduled, .badge-paid { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-line); }
+.badge-unknown { background: var(--head); color: var(--ink); border-color: var(--line); }
 .badge-rejected, .chip-error { background: var(--bad-bg); color: var(--bad); border-color: var(--bad-line); }
 
 .flags { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s2); }
@@ -118,7 +121,13 @@ pre { overflow: auto; font-family: var(--mono); font-size: var(--fs-sm); }
 .home { margin: 0 0 var(--s4); }
 .about { font-size: var(--fs-lg); margin: 0 0 var(--s3); }
 .cards.big .card { text-decoration: none; color: inherit; }
-.cards.big .card strong { font-size: var(--fs-2xl); line-height: 1.2; }
+.cards.big .card strong { font-size: var(--fs-xl); line-height: 1.2; }
+.cards.big .card.primary strong { font-size: var(--fs-2xl); } /* the one number this role acts on first is the largest */
+.card .means { display: block; margin-top: var(--s1); font-size: var(--fs-sm); color: var(--muted); }
+.card.warn { background: var(--warn-bg); border-color: var(--warn-line); border-left: 6px solid var(--warn); color: var(--warn); }
+.card.warn .means { color: var(--warn); }
+.card.warn, .cards.big .card.warn { color: var(--warn); }
+.cards.big a.card.warn:hover { background: var(--warn-bg); }
 .cards.big a.card:hover { border-color: var(--accent); background: var(--hover); }
 .personas { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--s4); }
 .personas section { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 0 var(--s4) var(--s4); }
@@ -131,8 +140,14 @@ pre { overflow: auto; font-family: var(--mono); font-size: var(--fs-sm); }
 .chart figcaption { font-weight: 600; margin-bottom: var(--s1); }
 .chart svg { width: 100%; height: auto; }
 .chart .grid { stroke: var(--line); }
-.chart text { fill: currentColor; font-size: 11px; }
-.chart .val { font-weight: 600; }
+.chart text { fill: var(--ink); font-size: 12px; }
+.chart .tick { fill: var(--muted); font-variant-numeric: tabular-nums; }
+.chart .cat { fill: var(--ink); }
+.chart .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+/* the one chart motion: each bar grows from its left edge once on first render; values and gridlines stay put */
+.chart .bar { transform-box: fill-box; transform-origin: 0 50%; animation: bar-grow 250ms ease-out; }
+@keyframes bar-grow { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .chart .bar { animation: none; } }
 .chart .axis { fill: var(--muted); font-style: italic; }
 .legend { display: flex; gap: var(--s4); margin: 0 0 var(--s1); }
 .legend i { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; vertical-align: middle; }

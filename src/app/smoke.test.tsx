@@ -69,7 +69,7 @@ import { runBatch, type Row } from "@/components/BatchUpload";
 
 const PAGES: [string, () => ReactNode, string][] = [
   ["login", Login, "Password"],
-  ["dashboard", Dashboard, "2,500.00"],
+  ["dashboard", Dashboard, "/invoices?status=paid"], // headline numbers now come from RoleHome only
   ["invoices", Invoices, "INV-1"],
   ["invoice detail", InvoiceDetail, "Dana Approver"],
   ["approvals", Approvals, "Manager"],

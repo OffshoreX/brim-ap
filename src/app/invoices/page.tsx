@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { INVOICE_STATUSES } from "@/contracts";
-import { Empty, StatusBadge, Table, ymd } from "@/components/ui";
+import { Empty, STATUS_LABEL, StatusBadge, Table, ymd } from "@/components/ui";
 import { Load, money, useApi } from "@/components/api";
 import RoleHome from "@/components/RoleHome";
 import BatchUpload from "@/components/BatchUpload";
@@ -14,6 +14,11 @@ type Item = { id: number; status: string; vendorId: number | null; invoiceNumber
 export default function InvoicesPage() {
   const [status, setStatus] = useState("");
   const role = useApi<MeResponse>("/api/me").data?.user.role;
+  // The dashboard links here with ?status=...; read it on the client (no Suspense needed) and ignore unknown values.
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get("status");
+    if (s && s in STATUS_LABEL) setStatus(s);
+  }, []);
 
   return (
     <main id="main">
@@ -25,7 +30,7 @@ export default function InvoicesPage() {
       <label>Status{" "}
         <select value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All</option>
-          {[...INVOICE_STATUSES, "scheduled"].map((s) => <option key={s}>{s}</option>)}
+          {[...INVOICE_STATUSES, "scheduled"].map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
         </select>
       </label>
       <Load<Item[]> url={`/api/invoices`}>

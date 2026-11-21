@@ -11,9 +11,10 @@ export type DiscountRow = { vendor: string; terms: string; takenPayments: number
 // Same roles as REPORT_ROLES on the server; the server still answers 403 for anyone else.
 export const REPORT_ROLES = ["finance_manager", "controller_admin", "auditor"];
 
-const BLUE = { name: "Total", color: "#2563eb" };
-const GREEN = { name: "Taken", color: "#059669" };
-const ORANGE = { name: "Missed", color: "#d97706" };
+// Colours are the --chart-* tokens in ui.css, never hex here.
+const BLUE = { name: "Total", color: "var(--chart-total)" };
+const GREEN = { name: "Taken", color: "var(--chart-taken)" };
+const ORANGE = { name: "Missed", color: "var(--chart-missed)" };
 
 export function AgingPanel() {
   return (

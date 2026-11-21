@@ -3,12 +3,15 @@ import type { ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 
 // Looks only. Colour AND a text label AND an icon so meaning never depends on colour alone.
-const STATUS_LABEL: Record<string, string> = {
+export const STATUS_LABEL: Record<string, string> = {
   received: "Received", needs_review: "Needs review", pending_approval: "Pending approval", approved: "Approved",
   scheduled: "Scheduled", paid: "Paid", rejected: "Rejected",
 };
+// A status the UI does not know gets a neutral grey badge and a plain label ("part_paid" -> "Part paid"), never the raw code.
+const plain = (s: string) => { const t = s.replace(/_/g, " ").trim(); return t ? t[0].toUpperCase() + t.slice(1) : "Unknown"; };
 export function StatusBadge({ status }: { status: string }) {
-  return <span className={`badge badge-${status}`}>{status in STATUS_LABEL && <Icon name={status as IconName} />}{STATUS_LABEL[status] ?? status}</span>;
+  const known = status in STATUS_LABEL;
+  return <span className={`badge ${known ? `badge-${status}` : "badge-unknown"}`}>{known && <Icon name={status as IconName} />}{known ? STATUS_LABEL[status] : plain(status)}</span>;
 }
 
 const SEVERITY: Record<string, string> = { error: "Error", warning: "Warning", info: "Info" };
