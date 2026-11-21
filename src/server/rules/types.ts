@@ -35,3 +35,8 @@ export type CodedInvoice = { vendorId: string; accountCode: string; taxCode: str
 export type CodingResult =
   | { status: 'suggested'; accountCode: string; taxCode: string; confidence: number; reason: string }
   | { status: 'none'; reason: string };
+
+// Payment release inputs (T6). Roles are plain strings so this file stays independent of contracts.
+export type ReleaseUser = { role: string; releaseLimitCents: number };
+export type ReleasePayment = { amountCents: number };
+export type ReleaseResult = { allowed: true } | { allowed: false; reason: string };
