@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Empty, SeverityChip, Table, ymd } from "./ui";
-import { ConfirmAction, useActions } from "./actions";
+import { ActionButton, useActions } from "./actions";
 import { money, post } from "./api";
 
 // Shape of GET /api/approvals/inbox rows (src/server/views.ts approvalInbox).
@@ -59,9 +59,9 @@ export function InboxTable({ rows, reload }: { rows: InboxRow[]; reload: () => v
                 <td>{roleName(r.role)}, step {r.stepNo}{r.delegatedFromId ? " (delegated)" : ""}{r.reason ? `: ${r.reason}` : ""}</td>
                 <td>
                   {hasErrorFlag(r) ? <Link href={`/invoices/${r.invoiceId}`}>Open to review</Link>
-                    : <ConfirmAction icon="approved" label="Approve" busyLabel="Approving…" ariaLabel={`Approve ${r.invoiceNumber}`} busy={a.busyKey === `approve-${r.invoiceId}`} locked={a.locked}
-                        title={`Confirm approval of ${r.invoiceNumber}`} facts={[["Amount", money(r.totalCents, r.currency)], ["Vendor", r.vendorName ?? "unknown vendor"]]} confirmLabel={`Approve ${money(r.totalCents, r.currency)}`}
-                        onConfirm={(_, key) => a.run(`approve-${r.invoiceId}`, () => post(`/api/invoices/${r.invoiceId}/decision`, { decision: "approved" }, { "idempotency-key": key }), `Approved ${r.invoiceNumber}`)} />}
+                    : <ActionButton icon="approved" label="Approve" busyLabel="Approving…" ariaLabel={`Approve ${r.invoiceNumber}`} busy={a.busyKey === `approve-${r.invoiceId}`} locked={a.locked}
+                        // Routine, so one click; the lock stops a double click and a fresh key per click makes the server refuse a repeat.
+                        onClick={() => a.run(`approve-${r.invoiceId}`, () => post(`/api/invoices/${r.invoiceId}/decision`, { decision: "approved" }, { "idempotency-key": crypto.randomUUID() }), `Approved ${r.invoiceNumber}`)} />}
                   {a.show(`approve-${r.invoiceId}`)}
                 </td>
               </tr>

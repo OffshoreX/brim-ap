@@ -2,7 +2,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Empty, SeverityChip, Table } from "@/components/ui";
-import { FLAG_TITLE, Load, money, Notice, post, type Flag } from "@/components/api";
+import { FLAG_TITLE, Load, money, post, type Flag } from "@/components/api";
+import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
 import { CAN_CLERK, useCan, useCurrentUser } from "@/components/CurrentUser";
 
 type Item = { id: number; invoiceNumber: string; totalCents: number; currency: string; flags: Flag[] };
@@ -23,15 +24,11 @@ export function groupByCode(items: Item[], severity: string) {
 
 function ExceptionRow({ item, done }: { item: Item; done: () => void }) {
   const [note, setNote] = useState("");
-  const [msg, setMsg] = useState<{ ok?: string; error?: string }>({});
+  const a = useActions(done); // one request at a time; the result stays beside the buttons until dismissed
   const { role } = useCurrentUser();
   const canResolve = useCan(CAN_CLERK); // looks only: the resolve route checks the role and that the invoice still needs review
-  async function resolve(action: "send_to_approval" | "reject") {
-    if (!note.trim()) return setMsg({ error: "Write a note first: it goes in the audit log." });
-    const r = await post(`/api/exceptions/${item.id}/resolve`, { action, note: note.trim() });
-    if (r.error) setMsg({ error: r.error });
-    else done();
-  }
+  const resolve = (action: "send_to_approval" | "reject", text: string) => a.run(action, () => post(`/api/exceptions/${item.id}/resolve`, { action, note: text }), action === "reject" ? `Rejected invoice ${item.invoiceNumber || item.id}` : `Sent invoice ${item.invoiceNumber || item.id} to approval`);
+  const name = item.invoiceNumber || String(item.id);
   return (
     <tr>
       <td><Link href={`/invoices/${item.id}`}>{item.invoiceNumber || item.id}</Link></td>
@@ -39,10 +36,13 @@ function ExceptionRow({ item, done }: { item: Item; done: () => void }) {
       <td>{item.flags.map((f) => (FLAG_TITLE[f.code] ? `${FLAG_TITLE[f.code]}: ${f.message}` : f.message)).join("; ")}</td>
       <td>
         {role && !canResolve ? <p className="muted">Only AP clerks, finance managers and controllers can resolve this.</p> : canResolve && <>
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (required)" aria-label={`Note for invoice ${item.id}`} />
-        <button onClick={() => resolve("send_to_approval")}>Send to approval</button>
-        <button className="secondary" onClick={() => resolve("reject")}>Reject</button>
-        <Notice {...msg} />
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note for approval (required)" aria-label={`Note for invoice ${item.id}`} />
+        <ActionButton icon="approved" label="Send to approval" busyLabel="Sending…" ariaLabel={`Send invoice ${name} to approval`} busy={a.busyKey === "send_to_approval"} locked={a.locked}
+          onClick={() => note.trim() ? resolve("send_to_approval", note.trim()) : a.fail("send_to_approval", "Write a note first: it goes in the audit log.")} />
+        <ConfirmAction secondary icon="rejected" label="Reject" busyLabel="Rejecting…" ariaLabel={`Reject invoice ${name}`} busy={a.busyKey === "reject"} locked={a.locked}
+          title="Confirm rejection" ask={{ label: "Reason for rejecting", required: true }} facts={[["Invoice", name], ["Total", money(item.totalCents, item.currency)]]} confirmLabel={`Reject invoice ${name}`}
+          onConfirm={(text) => resolve("reject", text)} />
+        {a.show("send_to_approval")}{a.show("reject")}
         </>}
       </td>
     </tr>
