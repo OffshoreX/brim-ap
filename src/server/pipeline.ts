@@ -6,14 +6,14 @@ import { createChain } from "./approvals";
 import { getDb } from "./db";
 import { transition } from "./invoiceStatus";
 import { checkArithmetic } from "./rules/arithmetic";
-import { checkVendorBankRisk, type BankChangeRow } from "./rules/bank";
+import { checkVendorBankRisk, readInvoiceBank, type BankChangeRow } from "./rules/bank";
 import { suggestCoding } from "./rules/coding";
 import { checkContractByBilling, type BillingContract, type BillingLine, type RateFor } from "./rules/contract";
 import { checkCreditNote } from "./rules/creditnote";
 import { CARD_WINDOW_DAYS, findCrossPayments, type BankTxn, type CardTxn, type PaymentRow } from "./rules/crosspay";
 import { findDuplicates } from "./rules/duplicates";
 import { convertCents } from "./rules/fx";
-import { dueDateFor, parseEarlyPayTerms } from "./rules/paymentTerms";
+import { checkPaymentTerms, dueDateFor, parseEarlyPayTerms } from "./rules/paymentTerms";
 import { checkPoMatch } from "./rules/po";
 import { findSplitInvoices } from "./rules/split";
 import { checkTax, type TaxCodeRate, type TaxLine } from "./rules/tax";
@@ -56,6 +56,7 @@ type ContractRow = {
 
 const today = () => new Date().toISOString().slice(0, 10);
 const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0);
+const digitsOf = (s: string | null | undefined) => (s ?? "").replace(/\D/g, ""); // tax ids are compared on digits only
 const alnum = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 // Only USD->CAD exists in the data (fx_rates, one row per day); any other pair is refused, never guessed.
@@ -141,21 +142,28 @@ function poFindings(db: Db, po: { id: number; vendor_id: number; total_cents: nu
   }
 }
 
-// A credit note names the invoice it credits in its text; the longest invoice number of this vendor found there is that invoice.
-function creditFindings(db: Db, x: ExtractedInvoice, vendorId: number, invoiceId: number): Finding[] {
+// A credit note points at the invoice it credits by its own number ("CN-1234" credits invoice "1234"), else by naming
+// that invoice in its text. The longest invoice number of this vendor found there is the original.
+// No original found: a warning only, there is nothing to check the amount against.
+function creditFindings(db: Db, x: ExtractedInvoice, vendorId: number, invoiceId: number): { findings: Finding[]; originalId: number | null } {
   const text = x.lines.map((l) => l.description).join(" ").toLowerCase();
-  const originals = (db.prepare("SELECT id, invoice_number, total_cents FROM invoices WHERE vendor_id = ? AND total_cents > 0 AND invoice_number != ''").all(vendorId) as { id: number; invoice_number: string; total_cents: number }[])
-    .filter((o) => new RegExp(`(?<![a-z0-9])${o.invoice_number.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9])`).test(text))
-    .sort((a, b) => b.invoice_number.length - a.invoice_number.length);
-  const orig = originals[0];
+  const suffix = /^CN-(.+)$/i.exec(x.invoiceNumber.trim())?.[1].trim().toLowerCase();
+  const all = db.prepare("SELECT id, invoice_number, total_cents FROM invoices WHERE vendor_id = ? AND total_cents > 0 AND invoice_number != ''").all(vendorId) as { id: number; invoice_number: string; total_cents: number }[];
+  const orig =
+    all.find((o) => o.invoice_number.trim().toLowerCase() === suffix) ??
+    all
+      .filter((o) => new RegExp(`(?<![a-z0-9])${o.invoice_number.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9])`).test(text))
+      .sort((a, b) => b.invoice_number.length - a.invoice_number.length)[0];
+  if (!orig) return { findings: [warning("credit_note_unmatched", `Credit note ${x.invoiceNumber} does not match an earlier invoice of this vendor`)], originalId: null };
   // ponytail: earlier credits are found by their text mentioning the number; a real link column would be exact.
-  const credited = orig
-    ? (db.prepare("SELECT COALESCE(-SUM(total_cents),0) AS n FROM invoices WHERE vendor_id = ? AND id != ? AND total_cents < 0 AND status != 'rejected' AND instr(lower(extraction_json), ?) > 0").get(vendorId, invoiceId, orig.invoice_number.toLowerCase()) as { n: number }).n
-    : 0;
-  return checkCreditNote(
-    { vendorId: String(vendorId), totalCents: x.totalCents, referencesInvoiceId: orig ? String(orig.id) : null },
-    orig ? [{ id: String(orig.id), vendorId: String(vendorId), totalCents: orig.total_cents, creditedCents: credited }] : []
-  );
+  const credited = (db.prepare("SELECT COALESCE(-SUM(total_cents),0) AS n FROM invoices WHERE vendor_id = ? AND id != ? AND total_cents < 0 AND status != 'rejected' AND instr(lower(extraction_json), ?) > 0").get(vendorId, invoiceId, orig.invoice_number.toLowerCase()) as { n: number }).n;
+  return {
+    findings: checkCreditNote(
+      { vendorId: String(vendorId), totalCents: x.totalCents, referencesInvoiceId: String(orig.id) },
+      [{ id: String(orig.id), vendorId: String(vendorId), totalCents: orig.total_cents, creditedCents: credited }]
+    ),
+    originalId: orig.id,
+  };
 }
 
 // Only money that left outside our own records counts: a bank or card line that one of our payments explains is not a second payment.
@@ -178,28 +186,20 @@ function crossFindings(db: Db, vendor: Vendor, invoiceId: number, date: string, 
   return findCrossPayments({ id: String(invoiceId), vendorId: String(vendor.id), totalCents: cadCents, date }, { id: String(vendor.id), legalName: vendor.name }, card, bank, payments);
 }
 
-// Bank text like "003 92968 953389679" is institution, transit, account. A lone number is taken as the account.
-function parseBank(text: string, v: Vendor) {
-  const g = text.match(/\d+/g) ?? [];
-  if (g.length === 3) return { institution: g[0], transit: g[1], account: g[2] };
-  if (g.length === 1) return { institution: v.bank_institution ?? "", transit: v.bank_transit ?? "", account: g[0] };
-  return null;
-}
-
 // Compares the invoice's account with the vendor master and reads the change history for risk (unverified, recent).
-function bankFindings(db: Db, v: Vendor, text: string, invoiceDate: string): Finding[] {
-  const bank = parseBank(text, v);
-  if (!bank) return [error("bank_details_unparsed", "Could not read institution, transit and account from the invoice")];
+function bankFindings(db: Db, v: Vendor, x: ExtractedInvoice): Finding[] {
+  const read = readInvoiceBank(x);
+  if (read.kind === "none") return [];
+  if (read.kind === "unreadable") return [error("bank_details_unparsed", "Could not read institution, transit and account from the invoice")];
   const changes = (db.prepare("SELECT changed_at, request_channel, verified_by_callback, old_account_last4, new_account_last4 FROM vendor_bank_changes WHERE vendor_id = ? AND status = 'applied' ORDER BY changed_at").all(v.id) as
     { changed_at: string; request_channel: string | null; verified_by_callback: number | null; old_account_last4: string | null; new_account_last4: string | null }[])
     .map((c): BankChangeRow => ({ changedAt: c.changed_at.slice(0, 10), channel: c.request_channel ?? "", verifiedByCallback: c.verified_by_callback === 1, oldLast4: c.old_account_last4 ?? "", newLast4: c.new_account_last4 ?? "" }));
-  const out = checkVendorBankRisk(
-    { ...bank, date: invoiceDate },
+  return checkVendorBankRisk(
+    { ...read.bank, date: x.invoiceDate },
     { institution: v.bank_institution ?? "", transit: v.bank_transit ?? "", account: v.bank_account ?? "", updatedAt: v.bank_details_updated_at?.slice(0, 10) },
     changes,
     today()
   );
-  return out;
 }
 
 // Never throws: an unreadable file or a crashing extractor is just another needs_review.
@@ -246,14 +246,27 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     }
     const x: ExtractedInvoice = extracted.invoice;
 
-    // Vendor match (rules/vendorMatch.ts). The extractor does not return a tax number yet, so only the name is passed.
+    // Vendor match (rules/vendorMatch.ts). The name decides first, so a tax id that disagrees with the named vendor is caught, not trusted.
+    // Only when the name finds no one is the tax id (digits only) used to pick the vendor.
     const vendors = db
       .prepare("SELECT id, name, gst_hst_number AS taxNumber, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at, payment_terms_days, early_pay_discount FROM vendors")
       .all() as (Vendor & { taxNumber: string | null })[];
-    const match = matchVendor(x.vendorName, vendors);
+    const taxDigits = digitsOf(x.vendorTaxId);
+    let match = matchVendor(x.vendorName, vendors);
+    if (match.status !== "matched" && taxDigits) {
+      const byTax = matchVendor(x.vendorName, vendors.map((v) => ({ ...v, taxNumber: digitsOf(v.taxNumber) })), taxDigits);
+      if (byTax.status === "matched") match = byTax;
+    }
     const vendor = match.status === "matched" ? vendors.find((v) => v.id === match.id)! : null;
     const vendorId = vendor?.id ?? null;
     const flags: Finding[] = [];
+    // Text inside the document is data. It is shown to the clerk and nothing in it is acted on.
+    if (x.notes) flags.push(warning("document_contains_instructions", `The document contains an instruction, ignored: "${x.notes.slice(0, 300)}"`));
+    if (vendor && match.status === "matched" && match.by === "tax_number")
+      flags.push(warning("vendor_matched_by_tax_id", `No vendor is named "${x.vendorName}"; matched to "${vendor.name}" by tax id ${x.vendorTaxId}`));
+    const vendorTax = digitsOf(vendor?.taxNumber);
+    if (vendor && taxDigits && vendorTax && taxDigits !== vendorTax)
+      flags.push(error("vendor_taxid_mismatch", `Tax id ${x.vendorTaxId} on the invoice differs from the one on file for "${vendor.name}"`));
     if (match.status === "none") flags.push(error("vendor_unmatched", `No vendor named "${x.vendorName}"`));
     if (match.status === "ambiguous") flags.push(error("vendor_ambiguous", `${match.ids.length} vendors match "${x.vendorName}"`));
     // Matched, but only after ignoring formatting: say so, so a clerk can see which record was used.
@@ -267,11 +280,14 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     // Terms we cannot read mean no discount, and a clerk is told why. A missing due date is worked out from the vendor's terms.
     const terms = parseEarlyPayTerms(vendor?.early_pay_discount);
     if (terms.kind === "unparsed") flags.push(warning("early_pay_terms_unparsed", terms.note));
-    const dueDate = x.dueDate ?? (vendor ? dueDateFor(x.invoiceDate, vendor.payment_terms_days) : null);
+    // The vendor's terms win over the invoice's text: when they differ the due date comes from the vendor record too.
+    const termsFlags = vendor ? checkPaymentTerms(x.paymentTerms, vendor.payment_terms_days) : [];
+    flags.push(...termsFlags);
+    const dueDate = (termsFlags.length === 0 ? x.dueDate : null) ?? (vendor ? dueDateFor(x.invoiceDate, vendor.payment_terms_days) : null);
 
     // Amounts the checks and the stored row share. CAD is used only to compare against limits and other CAD records.
     const subtotalCents = sum(x.lines.map((l) => l.amountCents));
-    const isCredit = x.totalCents < 0;
+    const isCredit = x.isCreditNote === true || x.totalCents < 0;
     const fx = rateFor(db)(x.currency, "CAD", x.invoiceDate);
     let totalCadCents: number | null = null;
     try {
@@ -285,8 +301,10 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
          LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN users m ON m.id = d.manager_user_id WHERE i.id = ?`
       )
       .get(invoiceId) as { province: string | null; limitCents: number | null };
+    // Tax is judged by where the goods go when the invoice says so; otherwise where the requester works.
+    const province = x.shipToProvince ?? ctx.province;
     const contract = vendorId !== null && !isCredit ? pickContract(db, vendorId, x.invoiceDate) : null;
-    const tax = vendorId !== null ? taxFindings(db, x, vendorId, invoiceId, ctx.province) : null;
+    const tax = vendorId !== null ? taxFindings(db, x, vendorId, invoiceId, province) : null;
 
     // Save what was read (lines replaced so a rerun never doubles them).
     db.prepare(
@@ -294,7 +312,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
        fx_rate_to_cad_bps=?, total_cad_cents=?, ship_to_province=?, po_id=?, contract_id=?, extraction_json=?, extracted_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`
     ).run(
       vendorId, x.invoiceNumber, x.invoiceDate, dueDate, subtotalCents, tax?.charged.gstHstCents ?? null, tax?.charged.pstQstCents ?? null, x.totalCents, x.currency,
-      x.currency === "CAD" ? 10_000 : fx?.rateBps ?? null, totalCadCents, ctx.province, po?.id ?? null, contract?.id ?? null, JSON.stringify(x), invoiceId
+      x.currency === "CAD" ? 10_000 : fx?.rateBps ?? null, totalCadCents, province, po?.id ?? null, contract?.id ?? null, JSON.stringify(x), invoiceId
     );
     db.prepare("DELETE FROM invoice_lines WHERE invoice_id = ?").run(invoiceId);
     const addLine = db.prepare(
@@ -322,13 +340,16 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
           others.map((o) => ({ id: String(o.id), vendorId: String(vendorId), number: o.invoice_number, totalCents: o.total_cents, date: o.invoice_date, kind: o.total_cents < 0 ? "credit_note" : "invoice" }))
         )
       );
-      if (x.bankDetails) flags.push(...bankFindings(db, vendor, x.bankDetails, x.invoiceDate));
+      flags.push(...bankFindings(db, vendor, x));
       // A request still waiting for its callback is not on file yet. Whatever account this invoice shows, hold it until a finance user verifies.
       if (db.prepare("SELECT 1 FROM vendor_bank_changes WHERE vendor_id = ? AND status = 'pending'").get(vendorId))
         flags.push(error("bank_change_unverified", "Vendor bank change not yet verified by callback"));
 
-      if (isCredit) flags.push(...creditFindings(db, x, vendorId, invoiceId));
-      else {
+      if (isCredit) {
+        const credit = creditFindings(db, x, vendorId, invoiceId);
+        flags.push(...credit.findings);
+        if (credit.originalId !== null) writeAudit({ actorId, action: "invoice.credit_linked", entity: "invoice", entityId: invoiceId, after: { originalInvoiceId: credit.originalId } });
+      } else {
         // A PO is checked when the invoice names one or the vendor must have one (P13); a contract when the vendor has one.
         if (x.poNumber || vendor.requires_po) flags.push(...poFindings(db, po, x, vendorId, invoiceId, subtotalCents));
         if (contract) flags.push(...contractFindings(db, contract, x, vendorId, invoiceId, subtotalCents));

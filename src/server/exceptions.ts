@@ -3,6 +3,7 @@ import { writeAudit } from "./audit";
 import { getDb } from "./db";
 import { DEFAULT_PAGE, type Page } from "./paging";
 import { transition } from "./invoiceStatus";
+import { bankDiffers, readInvoiceBank } from "./rules/bank";
 
 // Response types live here, not in contracts.ts (lead-owned).
 export type ExceptionFlag = { code: string; message: string };
@@ -59,13 +60,29 @@ export function listExceptions(page: Page = DEFAULT_PAGE): ExceptionItem[] {
   }));
 }
 
+// The account on the invoice is checked again against the vendor as it is now, so a bank change verified since the flag cleared it.
+// Anything unreadable stays blocked: this never lets a doubtful invoice through.
+function bankStillDiffers(invoiceId: number, extractionJson: string | null): boolean {
+  const v = getDb().prepare("SELECT v.bank_institution, v.bank_transit, v.bank_account FROM invoices i JOIN vendors v ON v.id = i.vendor_id WHERE i.id = ?").get(invoiceId) as
+    | { bank_institution: string | null; bank_transit: string | null; bank_account: string | null }
+    | undefined;
+  try {
+    const read = readInvoiceBank(JSON.parse(extractionJson ?? ""));
+    return !v || read.kind !== "bank" || bankDiffers(read.bank, { institution: v.bank_institution ?? "", transit: v.bank_transit ?? "", account: v.bank_account ?? "" });
+  } catch {
+    return true;
+  }
+}
+
 export function resolveException(user: User, invoiceId: number, action: ResolveAction, note: string): ResolveResponse {
   const db = getDb();
   // One transaction: status change, its audit row and the note's audit row succeed or fail together.
   return db.transaction(() => {
-    const row = db.prepare("SELECT status FROM invoices WHERE id = ?").get(invoiceId) as { status: string } | undefined;
+    const row = db.prepare("SELECT status, flags, extraction_json FROM invoices WHERE id = ?").get(invoiceId) as { status: string; flags: string; extraction_json: string | null } | undefined;
     if (!row) throw new ExceptionError(404, "Invoice not found");
     if (row.status !== "needs_review") throw new ExceptionError(409, `Invoice is ${row.status}, not needs_review`);
+    if (action === "send_to_approval" && parseFlags(row.flags).some((f) => f.code === "bank_details_differ") && bankStillDiffers(invoiceId, row.extraction_json))
+      throw new ExceptionError(409, "The invoice's bank account differs from the vendor's. A finance user must verify a bank change first.");
     const status = action === "reject" ? ("rejected" as const) : ("pending_approval" as const);
     transition(invoiceId, status, user.id);
     writeAudit({

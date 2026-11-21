@@ -1,6 +1,8 @@
 // Payment terms as plain functions: early-pay discount parsing, due dates, and which method a vendor is paid by.
 // Dates are ISO yyyy-mm-dd strings, so they compare correctly as text.
 
+import type { Finding } from "./types";
+
 export type EarlyPayTerms =
   | { kind: "none" }
   | { kind: "discount"; percentBps: number; discountDays: number; netDays: number }
@@ -23,6 +25,22 @@ export function parseEarlyPayTerms(text: string | null | undefined): EarlyPayTer
   // A discount of 0% or over 100%, or a window longer than the net period, is a typo, not terms.
   if (percentBps <= 0 || percentBps > 10_000 || discountDays > netDays) return unparsed;
   return { kind: "discount", percentBps, discountDays, netDays };
+}
+
+// Days to pay as printed on an invoice: "Net 30", "2/10 net 30", "payable within 45 days", "due on receipt" (0).
+// Anything else is null: not understood is not the same as different.
+export function parseTermsDays(text: string | null | undefined): number | null {
+  const t = (text ?? "").toLowerCase();
+  const m = /net\s*(\d+)/.exec(t) ?? /(\d+)\s*days?/.exec(t);
+  if (m) return Number(m[1]);
+  return /(due|payable)\s+(on|upon)\s+receipt|immediate/.test(t) ? 0 : null;
+}
+
+// The vendor record wins; this only tells a clerk that the invoice says something else.
+export function checkPaymentTerms(invoiceText: string | null | undefined, vendorDays: number | null | undefined): Finding[] {
+  const shown = parseTermsDays(invoiceText);
+  if (shown === null || vendorDays === null || vendorDays === undefined || shown === vendorDays) return [];
+  return [{ code: "payment_terms_differ", severity: "info", message: `Invoice says "${invoiceText!.trim()}" (${shown} days); the vendor record says ${vendorDays} days and is used` }];
 }
 
 // Calendar days in UTC, so daylight saving never shifts a date.

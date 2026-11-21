@@ -3,6 +3,7 @@ import { getDb, resetDbForTests } from "./db";
 import { signSession } from "./session";
 import { GET as list } from "@/app/api/exceptions/route";
 import { POST as resolve } from "@/app/api/exceptions/[id]/resolve/route";
+import { requestBankChange, verifyBankChange } from "./vendors";
 
 process.env.SESSION_SECRET = "test-secret";
 process.env.DB_PATH = ":memory:";
@@ -68,4 +69,28 @@ test("bad body gets 400, unknown invoice 404", async () => {
   expect((await post(3, 1, { action: "nope", note: "x" })).status).toBe(400);
   expect((await post(3, 1, { action: "reject" })).status).toBe(400);
   expect((await post(3, 99, { action: "reject", note: "x" })).status).toBe(404);
+});
+
+// T44: an invoice that shows another account is held until a finance user verifies the bank change (the existing workflow).
+test("bank_details_differ: send_to_approval is refused until a verified bank change makes the account match", async () => {
+  const db = getDb();
+  db.prepare("INSERT INTO users (id,name,role,approval_limit_cents) VALUES (4,'Fin','finance_manager',0)").run();
+  db.prepare("UPDATE vendors SET bank_institution='001', bank_transit='12345', bank_account='123456789' WHERE id=1").run();
+  const shown = { bankDetails: null, bankInstitution: "001", bankTransit: "12345", bankAccount: "777777777" };
+  db.prepare("UPDATE invoices SET flags = ?, extraction_json = ? WHERE id = 1").run('[{"code":"bank_details_differ","message":"x","severity":"error"}]', JSON.stringify(shown));
+
+  const refused = await post(3, 1, { action: "send_to_approval", note: "looks fine" });
+  expect(refused.status).toBe(409);
+  expect((db.prepare("SELECT status FROM invoices WHERE id=1").get() as { status: string }).status).toBe("needs_review");
+
+  requestBankChange({ id: 3, name: "Clerk", role: "ap_clerk" } as never, 1, { institution: "001", transit: "12345", account: "777777777", channel: "phone" });
+  verifyBankChange({ id: 4, name: "Fin", role: "finance_manager" } as never, 1, true);
+  expect((await post(3, 1, { action: "send_to_approval", note: "bank change verified" })).status).toBe(200);
+});
+
+test("bank_details_differ: rejecting is always allowed, and an unreadable invoice record stays blocked", async () => {
+  const db = getDb();
+  db.prepare("UPDATE invoices SET flags = ?, extraction_json = 'not json' WHERE id IN (1,2)").run('[{"code":"bank_details_differ","message":"x"}]');
+  expect((await post(3, 1, { action: "send_to_approval", note: "x" })).status).toBe(409);
+  expect((await post(3, 2, { action: "reject", note: "x" })).status).toBe(200);
 });

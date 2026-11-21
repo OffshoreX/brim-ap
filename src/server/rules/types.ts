@@ -1,5 +1,5 @@
 // Local input types so the rules do not depend on the DB schema.
-export type Severity = 'error' | 'warning';
+export type Severity = 'error' | 'warning' | 'info'; // info is shown but never holds an invoice
 export type Finding = { code: string; message: string; severity: Severity };
 
 export type Line = { totalCents: number };

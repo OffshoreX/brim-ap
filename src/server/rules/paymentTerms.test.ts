@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseMethod, discountCentsFor, discountDeadline, dueDateFor, parseEarlyPayTerms, proposedPayDate } from "./paymentTerms";
+import { checkPaymentTerms, chooseMethod, discountCentsFor, discountDeadline, dueDateFor, parseEarlyPayTerms, parseTermsDays, proposedPayDate } from "./paymentTerms";
 
 // The two values that really appear in brim_ap_dataset/data/vendors.csv (early_pay_discount): blank and "2/10 net 30".
 describe("parseEarlyPayTerms", () => {
@@ -72,4 +72,21 @@ describe("chooseMethod", () => {
     expect(chooseMethod("CARD", false)).toMatchObject({ ok: true, method: "EFT", note: expect.any(String) });
   });
   it("lets a clerk request another method", () => expect(chooseMethod("EFT", false, "CHEQUE")).toEqual({ ok: true, method: "CHEQUE" }));
+});
+
+describe("parseTermsDays / checkPaymentTerms", () => {
+  it.each([["Net 30", 30], ["NET30", 30], ["2/10 net 30", 30], ["Payable within 45 days", 45], ["Due on receipt", 0]])("%s -> %s", (t, n) => expect(parseTermsDays(t)).toBe(n));
+  it.each([["", null], [null, null], ["See contract", null]])("%j -> not understood", (t, n) => expect(parseTermsDays(t)).toBe(n));
+  it("differs: one info finding, naming both", () => {
+    const f = checkPaymentTerms("Net 45", 30);
+    expect(f).toHaveLength(1);
+    expect(f[0]).toMatchObject({ code: "payment_terms_differ", severity: "info" });
+    expect(f[0].message).toContain("45");
+    expect(f[0].message).toContain("30");
+  });
+  it("same, not understood, or no vendor terms: nothing to say", () => {
+    expect(checkPaymentTerms("Net 30", 30)).toEqual([]);
+    expect(checkPaymentTerms("See contract", 30)).toEqual([]);
+    expect(checkPaymentTerms("Net 45", null)).toEqual([]);
+  });
 });
