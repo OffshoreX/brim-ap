@@ -10,7 +10,8 @@ export function getDb(): Database.Database {
     const file = process.env.DB_PATH || "data/app.db";
     if (file !== ":memory:") fs.mkdirSync(path.dirname(file), { recursive: true });
     db = new Database(file);
-    db.exec(fs.readFileSync(path.join(process.cwd(), "db/schema.sql"), "utf8"));
+    for (const f of ["db/schema.sql", "db/domain.sql"])
+      db.exec(fs.readFileSync(path.join(process.cwd(), f), "utf8"));
   }
   return db;
 }
