@@ -1,55 +1,100 @@
-import type { InvoiceTax, TaxCodeRate, TaxFinding, TaxLine } from './tax.types';
+import type { TaxFinding } from './tax.types';
 
 const TOLERANCE_CENTS = 1;
+const SCALE = 100000; // rates are integers in 1/100000 so 9.975% is exactly 9975
 
-// Integer math: round half away from zero, so a credit note rounds like the invoice it reverses.
-export function expectedTaxCents(amountCents: number, rateBps: number): number {
+// One row of the tax_codes table. rateE5: 0.13 -> 13000. appliesTo: 'goods' means never on services.
+export type TaxCodeRate = { code: string; rateE5: number; appliesTo: 'all' | 'goods' };
+// One invoice line as the dataset has it: its two tax codes (empty = none) and its type.
+export type TaxLine = { amountCents: number; lineType: 'goods' | 'services'; gstHstCode: string | null; pstQstCode: string | null };
+// Invoice-level tax actually charged (the dataset only stores totals, not tax per line).
+export type ChargedTax = { gstHstCents: number; pstQstCents: number };
+
+// Province -> the codes the law requires there. This is tax law, not dataset values.
+const PROVINCE_CODES: Record<string, { gstHst: string; pstQst: string | null }> = {
+  ON: { gstHst: 'HST13', pstQst: null },
+  AB: { gstHst: 'GST5', pstQst: null },
+  BC: { gstHst: 'GST5', pstQst: 'PST7_BC' },
+  QC: { gstHst: 'GST5', pstQst: 'QST9975' },
+};
+const NO_TAX = ['EXEMPT', 'FOREIGN']; // valid in every province, carry no tax
+
+// Exact decimal string ("0.09975") to rateE5 with no float math.
+export function rateToE5(rate: string): number {
+  const [whole, frac = ''] = rate.split('.');
+  return Number(whole) * SCALE + Number(frac.padEnd(5, '0').slice(0, 5));
+}
+
+// Integer math, half away from zero, so a credit note rounds like the invoice it reverses.
+export function expectedTaxCents(amountCents: number, rateE5: number): number {
   const sign = amountCents < 0 ? -1 : 1;
-  return sign * Math.floor((Math.abs(amountCents) * rateBps + 5000) / 10000);
+  return sign * Math.floor((Math.abs(amountCents) * rateE5 + SCALE / 2) / SCALE);
 }
 
 export function checkTax(
   lines: TaxLine[],
-  invoiceTaxes: InvoiceTax[],
-  deliveryProvince: string,
+  charged: ChargedTax,
+  shipToProvince: string,
   taxCodes: TaxCodeRate[],
 ): TaxFinding[] {
-  const bad = (lineIndex: number | null, code: string, message: string): TaxFinding => ({
-    code,
-    message,
-    severity: 'error',
-    lineIndex,
-  });
-  const nums = [...lines.map((l) => l.amountCents), ...invoiceTaxes.map((t) => t.amountCents)];
-  if (!nums.every(Number.isSafeInteger)) return [bad(null, 'NON_INTEGER_CENTS', 'All amounts must be integer cents')];
+  const out: TaxFinding[] = [];
+  const add = (lineIndex: number | null, code: string, message: string) =>
+    out.push({ code, message, severity: 'error', lineIndex });
+  const nums = [charged.gstHstCents, charged.pstQstCents, ...lines.map((l) => l.amountCents)];
+  if (!nums.every(Number.isSafeInteger)) return [{ code: 'NON_INTEGER_CENTS', message: 'All amounts must be integer cents', severity: 'error', lineIndex: null }];
 
-  const findings: TaxFinding[] = [];
-  const charged = lines.map(() => 0);
-  for (const t of invoiceTaxes) {
-    if (!Number.isInteger(t.lineIndex) || t.lineIndex < 0 || t.lineIndex >= lines.length) {
-      findings.push(bad(null, 'TAX_ON_UNKNOWN_LINE', `Tax of ${t.amountCents} cents points at line ${t.lineIndex}, which does not exist`));
-    } else charged[t.lineIndex] += t.amountCents;
-  }
+  const rule = PROVINCE_CODES[shipToProvince];
+  if (!rule) return [{ code: 'UNKNOWN_PROVINCE', message: `No tax rules for ship-to province ${shipToProvince}`, severity: 'error', lineIndex: null }];
+  const rateOf = (c: string) => taxCodes.find((t) => t.code === c);
 
+  let gstBase = 0; // pre-tax amount that should carry GST/HST
+  let pstBase = 0; // pre-tax amount that should carry PST/QST
+  let wrongCode = false;
   lines.forEach((line, i) => {
     const n = i + 1; // findings say "line 1" for the first line, as a clerk would count
-    const code = taxCodes.find((c) => c.code === line.taxCode);
-    if (!code) {
-      findings.push(bad(i, 'UNKNOWN_TAX_CODE', `Line ${n}: tax code ${line.taxCode ?? '(none)'} is not a known code`));
+    const gst = line.gstHstCode || null;
+    const pst = line.pstQstCode || null;
+    const exempt = gst !== null && NO_TAX.includes(gst);
+    if (gst !== null && !exempt && !rateOf(gst)) { add(i, 'UNKNOWN_TAX_CODE', `Line ${n}: tax code ${gst} is not a known code`); wrongCode = true; return; }
+    if (pst !== null && !rateOf(pst)) { add(i, 'UNKNOWN_TAX_CODE', `Line ${n}: tax code ${pst} is not a known code`); wrongCode = true; return; }
+    if (exempt) {
+      if (pst !== null) { add(i, 'TAX_ON_EXEMPT', `Line ${n}: ${gst} line also carries ${pst}`); wrongCode = true; }
+      return; // exempt and foreign lines add nothing to either base
+    }
+    if (gst !== rule.gstHst) {
+      add(i, 'WRONG_PROVINCE_CODE', `Line ${n}: code ${gst ?? '(none)'} but ${shipToProvince} requires ${rule.gstHst}`);
+      wrongCode = true;
       return;
     }
-    if (code.province !== null && code.province !== deliveryProvince) {
-      findings.push(bad(i, 'WRONG_PROVINCE_CODE', `Line ${n}: code ${code.code} is for ${code.province} but delivery is to ${deliveryProvince}`));
-      return; // expected amount is unknowable with the wrong code, so do not stack more findings
-    }
-    const expected = expectedTaxCents(line.amountCents, code.rateBps);
-    if (code.rateBps === 0) {
-      if (charged[i] !== 0) findings.push(bad(i, 'TAX_ON_EXEMPT', `Line ${n}: code ${code.code} is exempt or zero-rated but ${charged[i]} cents of tax was charged`));
-    } else if (charged[i] === 0 && expected !== 0) {
-      findings.push(bad(i, 'MISSING_TAX', `Line ${n}: expected ${expected} cents of tax (${code.code}) but none was charged`));
-    } else if (Math.abs(charged[i] - expected) > TOLERANCE_CENTS) {
-      findings.push(bad(i, 'TAX_MISMATCH', `Line ${n}: expected ${expected} cents of tax (${code.code}) but ${charged[i]} was charged`));
-    }
+    gstBase += line.amountCents;
+    if (pst === null) {
+      // BC/QC lines without their second tax are caught as MISSING_TAX at invoice level
+      if (rule.pstQst && !(rateOf(rule.pstQst)?.appliesTo === 'goods' && line.lineType === 'services')) pstBase += line.amountCents;
+    } else if (pst !== rule.pstQst) {
+      add(i, 'WRONG_PROVINCE_CODE', `Line ${n}: code ${pst} is not valid for ${shipToProvince}`);
+      wrongCode = true;
+    } else if (rateOf(pst)?.appliesTo === 'goods' && line.lineType === 'services') {
+      add(i, 'PST_ON_SERVICES', `Line ${n}: ${pst} applies to goods only but this is a services line`);
+      wrongCode = true;
+    } else pstBase += line.amountCents;
   });
-  return findings;
+  if (wrongCode) return out; // expected amounts are unknowable with wrong codes, so do not stack more findings
+
+  const gstRate = rateOf(rule.gstHst)?.rateE5 ?? 0;
+  const pstRate = rule.pstQst ? rateOf(rule.pstQst)?.rateE5 ?? 0 : 0;
+  const expGst = expectedTaxCents(gstBase, gstRate);
+  const expPst = expectedTaxCents(pstBase, pstRate);
+  const compare = (name: string, got: number, want: number) => {
+    if (want === 0 && got !== 0) add(null, 'TAX_ON_EXEMPT', `${name}: ${got} cents charged but nothing is taxable (exempt, foreign or not goods)`);
+    else if (got === 0 && want !== 0) add(null, 'MISSING_TAX', `${name}: expected ${want} cents but none was charged`);
+    else if (Math.abs(got - want) > TOLERANCE_CENTS) {
+      // QST on top of GST is the classic mistake: name it when that explains the charge
+      const onGross = expectedTaxCents(pstBase + expGst, pstRate);
+      if (name === 'PST/QST' && Math.abs(got - onGross) <= TOLERANCE_CENTS) add(null, 'QST_ON_GST_INCLUSIVE', `${name}: ${got} cents looks computed on the GST-inclusive amount; expected ${want} on the pre-tax amount`);
+      else add(null, 'TAX_MISMATCH', `${name}: expected ${want} cents but ${got} was charged`);
+    }
+  };
+  compare('GST/HST', charged.gstHstCents, expGst);
+  compare('PST/QST', charged.pstQstCents, expPst);
+  return out;
 }
