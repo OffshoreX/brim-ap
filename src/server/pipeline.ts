@@ -18,7 +18,8 @@ import { convertCents } from "./rules/fx";
 import { checkPaymentTerms, dueDateFor, parseEarlyPayTerms } from "./rules/paymentTerms";
 import { checkPoMatch } from "./rules/po";
 import { findSplitInvoices } from "./rules/split";
-import { checkTax, requiredTaxCodes, type TaxCodeRate, type TaxLine } from "./rules/tax";
+import { checkTaxAtSupply, resolveSupply, SUPPLY_LABEL, type Resolved } from "./rules/placeOfSupply";
+import { requiredTaxCodes, type TaxCodeRate, type TaxLine } from "./rules/tax";
 import { checkVendorStatus } from "./rules/vendorStatus";
 import type { Finding } from "./rules/types";
 import { matchVendor } from "./rules/vendorMatch";
@@ -50,7 +51,7 @@ type Db = ReturnType<typeof getDb>;
 type Vendor = {
   id: number; name: string; status: string | null; requires_po: number | null;
   bank_institution: string | null; bank_transit: string | null; bank_account: string | null; bank_details_updated_at: string | null;
-  payment_terms_days: number | null; early_pay_discount: string | null;
+  payment_terms_days: number | null; early_pay_discount: string | null; province_or_state: string | null;
 };
 export type ContractRow = {
   id: number; billing_type: BillingContract["billingType"]; currency: string; start_date: string; end_date: string; status: string | null;
@@ -82,9 +83,9 @@ function resolveTaxCode(t: { code: string; label: string }, codes: TaxCodeRate[]
 }
 
 // Builds checkTax's inputs. The extractor reads no per-line codes, so every line carries the invoice's own tax codes;
-// a vendor that charges no tax shows none, so its last coding (EXEMPT, FOREIGN) stands in. Province = where the requester works.
+// a vendor that charges no tax shows none, so its last coding (EXEMPT, FOREIGN) stands in. The province comes from rules/placeOfSupply.ts.
 // ponytail: line type comes from the vendor's latest history line; a vendor mixing goods and services in BC needs per-line types.
-function taxFindings(db: Db, x: ExtractedInvoice, vendorId: number, invoiceId: number, province: string | null) {
+function taxFindings(db: Db, x: ExtractedInvoice, vendorId: number, invoiceId: number, supply: Resolved) {
   const codes = (db.prepare("SELECT code, rate_bps, applies_to FROM tax_codes").all() as { code: string; rate_bps: number; applies_to: string | null }[]).map(
     (c): TaxCodeRate => ({ code: c.code, rateE5: Math.round(c.rate_bps * 10), appliesTo: c.applies_to === "goods" ? "goods" : "all" })
   );
@@ -103,9 +104,10 @@ function taxFindings(db: Db, x: ExtractedInvoice, vendorId: number, invoiceId: n
   if (!gstCode && last?.gst_hst_code && codes.find((c) => c.code === last.gst_hst_code)?.rateE5 === 0) gstCode = last.gst_hst_code;
   const lineType = last?.line_type ?? "goods";
   const lines: TaxLine[] = x.lines.map((l) => ({ amountCents: l.amountCents, lineType, gstHstCode: gstCode, pstQstCode: pstCode }));
-  const findings: Finding[] = checkTax(lines, charged, province ?? "(unknown)", codes);
+  const judged = checkTaxAtSupply(lines, charged, supply, codes);
+  const findings: Finding[] = judged.findings;
   if (!last) findings.push(warning("tax_line_type_assumed", "No earlier invoice from this vendor, so lines were treated as goods"));
-  return { findings, lines, charged, lineType, gstCode, pstCode };
+  return { findings, lines, charged, lineType, gstCode, pstCode, supply: judged.supply };
 }
 
 // The contract in force on the invoice date; else the latest one, so the rule reports it expired. A vendor with no contract has none to check.
@@ -258,7 +260,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     // Vendor match (rules/vendorMatch.ts). The name decides first, so a tax id that disagrees with the named vendor is caught, not trusted.
     // Only when the name finds no one is the tax id (digits only) used to pick the vendor.
     const vendors = db
-      .prepare("SELECT id, name, status, gst_hst_number AS taxNumber, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at, payment_terms_days, early_pay_discount FROM vendors")
+      .prepare("SELECT id, name, status, gst_hst_number AS taxNumber, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at, payment_terms_days, early_pay_discount, province_or_state FROM vendors")
       .all() as (Vendor & { taxNumber: string | null })[];
     const taxDigits = digitsOf(x.vendorTaxId);
     let match = matchVendor(x.vendorName, vendors);
@@ -282,8 +284,8 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     // Matched, but only after ignoring formatting: say so, so a clerk can see which record was used.
     if (vendor && match.status === "matched" && match.by === "normalized_name") flags.push(warning("vendor_name_variant", `"${x.vendorName}" was matched to vendor "${vendor.name}"`));
     const po = x.poNumber
-      ? (db.prepare("SELECT id, vendor_id, department_id, total_cents, currency FROM purchase_orders WHERE po_number = ?").get(x.poNumber) as
-          | { id: number; vendor_id: number; department_id: number | null; total_cents: number; currency: string }
+      ? (db.prepare("SELECT id, vendor_id, department_id, requester_user_id, total_cents, currency FROM purchase_orders WHERE po_number = ?").get(x.poNumber) as
+          | { id: number; vendor_id: number; department_id: number | null; requester_user_id: number | null; total_cents: number; currency: string }
           | undefined)
       : undefined;
 
@@ -307,22 +309,27 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     }
     const ctx = db
       .prepare(
-        `SELECT u.province, m.approval_limit_cents AS limitCents FROM invoices i LEFT JOIN users u ON u.id = i.requester_id
+        `SELECT u.province, u.role, m.approval_limit_cents AS limitCents FROM invoices i LEFT JOIN users u ON u.id = i.requester_id
          LEFT JOIN departments d ON d.id = u.department_id LEFT JOIN users m ON m.id = d.manager_user_id WHERE i.id = ?`
       )
-      .get(invoiceId) as { province: string | null; limitCents: number | null };
-    // Tax is judged by where the goods go when the invoice says so; otherwise where the requester works.
-    const province = x.shipToProvince ?? ctx.province;
+      .get(invoiceId) as { province: string | null; role: string | null; limitCents: number | null };
+    // Tax is judged by where the goods go. When the invoice does not say, the place of supply is guessed in a fixed order (rules/placeOfSupply.ts).
+    // An uploading AP clerk is data entry, not the requester, so their province counts only as the last resort.
+    const userProvince = (id: number | null | undefined) => (id ? (db.prepare("SELECT province FROM users WHERE id = ?").get(id) as { province: string | null } | undefined)?.province ?? null : null);
+    const clerkUploaded = ctx.role === "ap_clerk";
+    const supply = resolveSupply({ printed: x.shipToProvince, poRequester: userProvince(po?.requester_user_id), requester: clerkUploaded ? null : ctx.province, vendor: vendor?.province_or_state, clerk: clerkUploaded ? ctx.province : null });
     const contract = vendorId !== null && !isCredit ? pickContract(db, vendorId, x.invoiceDate) : null;
-    const tax = vendorId !== null ? taxFindings(db, x, vendorId, invoiceId, province) : null;
+    const tax = vendorId !== null ? taxFindings(db, x, vendorId, invoiceId, supply) : null;
+    const used = tax ? tax.supply : supply.chosen; // the province the tax was finally judged by, and where it came from
+    const province = used?.province ?? null;
 
     // Save what was read (lines replaced so a rerun never doubles them).
     db.prepare(
       `UPDATE invoices SET vendor_id=?, invoice_number=?, invoice_date=?, due_date=?, subtotal_cents=?, gst_hst_cents=?, pst_qst_cents=?, total_cents=?, currency=?,
-       fx_rate_to_cad_bps=?, total_cad_cents=?, ship_to_province=?, po_id=?, contract_id=?, extraction_json=?, extracted_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`
+       fx_rate_to_cad_bps=?, total_cad_cents=?, ship_to_province=?, ship_to_source=?, po_id=?, contract_id=?, extraction_json=?, extracted_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?`
     ).run(
       vendorId, x.invoiceNumber, x.invoiceDate, dueDate, subtotalCents, tax?.charged.gstHstCents ?? null, tax?.charged.pstQstCents ?? null, x.totalCents, x.currency,
-      x.currency === "CAD" ? 10_000 : fx?.rateBps ?? null, totalCadCents, province, po?.id ?? null, contract?.id ?? null, JSON.stringify(x), invoiceId
+      x.currency === "CAD" ? 10_000 : fx?.rateBps ?? null, totalCadCents, province, used?.source ?? null, po?.id ?? null, contract?.id ?? null, JSON.stringify(x), invoiceId
     );
     db.prepare("DELETE FROM invoice_lines WHERE invoice_id = ?").run(invoiceId);
     const addLine = db.prepare(
@@ -397,7 +404,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
       );
       const required = requiredTaxCodes(province ?? "", tax!.lineType, taxCodes);
       const taxCode = tax!.gstCode && ["EXEMPT", "FOREIGN"].includes(tax!.gstCode) ? tax!.gstCode : required?.gstHst ?? null;
-      const taxWhy = taxCode ? `tax ${taxCode} for ${province} ${tax!.lineType}` : `no tax rules for province ${province ?? "(unknown)"}`;
+      const taxWhy = taxCode ? `tax ${taxCode} for ${province} ${tax!.lineType}${used ? ` (place of supply: ${SUPPLY_LABEL[used.source]})` : ""}` : `no tax rules for province ${province ?? "(unknown)"}`;
       const lines = db.prepare("SELECT id, description FROM invoice_lines WHERE invoice_id = ? ORDER BY line_no").all(invoiceId) as { id: number; description: string }[];
       const update = db.prepare(
         "UPDATE invoice_lines SET gl_account_id = (SELECT id FROM gl_accounts WHERE code = ?), tax_code_id = (SELECT id FROM tax_codes WHERE code = ?), department_id = ?, coding_source = ?, coding_reason = ?, coding_needed = ? WHERE id = ?"

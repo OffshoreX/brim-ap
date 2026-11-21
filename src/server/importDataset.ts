@@ -99,7 +99,7 @@ function specs(ctx: { deptName: Map<string, string> }): Spec[] {
       fx_rate_to_cad_bps: (r) => decimalToInt(r.fx_rate_to_cad, 4), total_cad_cents: (r) => cents(r.total_cad),
       requester_id: (r) => num(r.requester_user_id), department: (r) => ctx.deptName.get(r.department_id) ?? null,
       department_id: (r) => num(r.department_id), po_id: (r) => num(r.po_id), contract_id: (r) => num(r.contract_id),
-      ship_to_province: (r) => txt(r.ship_to_province) } },
+      ship_to_province: (r) => txt(r.ship_to_province), ship_to_source: (r) => (txt(r.ship_to_province) ? "invoice" : null) } },
     { file: "invoice_lines.csv", table: "invoice_lines", key: "invoice_id, line_no", cols: {
       invoice_id: (r) => num(r.invoice_id), line_no: (r) => num(r.line_no), line_type: (r) => txt(r.line_type), description: (r) => r.description,
       quantity: (r) => num(r.quantity), unit_price_cents: (r) => cents(r.unit_price), amount_cents: (r) => cents(r.amount), currency: () => null, // filled from the invoice below

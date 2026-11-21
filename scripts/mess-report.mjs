@@ -39,7 +39,7 @@ const incoming = await incomingHits(path.join("brim_ap_dataset", "incoming_invoi
 fs.rmSync(uploads, { recursive: true, force: true });
 
 const report = buildReport(history.hits, incoming.hits, { asOf: AS_OF, historicalInvoices: history.invoices, incomingFiles: incoming.files, incomingNotExtracted: incoming.notExtracted, incomingWithoutShipTo: incoming.noShipTo });
-console.log(`${report.historicalInvoices} historical invoices, ${report.incomingFiles} incoming files (${incoming.notExtracted.length} had no cached extraction, ${incoming.noShipTo} extractions carry no ship-to province so their tax was judged by the clerk's province)`);
+console.log(`${report.historicalInvoices} historical invoices, ${report.incomingFiles} incoming files (${incoming.notExtracted.length} had no cached extraction, ${incoming.noShipTo} extractions carry no ship-to province so their place of supply was guessed)`);
 console.table(report.rows.map((r) => ({ type: r.label, history: r.history, incoming: r.incoming, examples: r.examples.join(", "), codes: Object.entries(r.codes).map(([c, n]) => `${c} x${n}`).join(", ") })));
 const other = Object.entries(report.other).sort((a, b) => b[1] - a[1]);
 if (other.length) console.log("Other findings:", other.map(([c, n]) => `${c} x${n}`).join(", "));

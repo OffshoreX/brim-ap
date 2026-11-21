@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeEach, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ExtractedInvoice } from "@/extract/extractInvoice";
 import { POST as processRoute } from "@/app/api/invoices/[id]/process/route";
 import { getDb, resetDbForTests } from "./db";
@@ -195,7 +195,8 @@ const credit = (description: string, amountCents: number): Partial<ExtractedInvo
 };
 
 const errorCases: [name: string, setup: string, invoice: Partial<ExtractedInvoice>, code: string][] = [
-  ["tax: HST charged where the requester's province needs GST", "UPDATE users SET province = 'AB' WHERE id = 1", {}, "WRONG_PROVINCE_CODE"],
+  ["tax: HST charged where the invoice's printed ship-to needs GST", "", { shipToProvince: "AB" }, "WRONG_PROVINCE_CODE"],
+  ["tax: a rate that is right in no province, with no ship-to printed", "", { taxes: [{ label: "HST 12%", code: "HST", amountCents: 1200 }], totalCents: 11200 }, "TAX_MISMATCH"],
   ["tax: amount differs from the rate", "", { taxes: [{ label: "HST 13%", code: "HST", amountCents: 1000 }], totalCents: 11000 }, "TAX_MISMATCH"],
   ["tax: a code that is not in tax_codes", "", { taxes: [{ label: "Magic tax", code: "MAGIC", amountCents: 1300 }] }, "UNKNOWN_TAX_CODE"],
   ["contract: expired", "INSERT INTO contracts (vendor_id,billing_type,currency,start_date,end_date,status) VALUES (1,'blanket','CAD','2025-01-01','2025-12-31','expired')", {}, "contract_expired"],
@@ -378,7 +379,7 @@ test("document_contains_instructions (warning): the text is shown and nothing in
   expect(row(id).status).not.toBe("approved");
 });
 
-test("shipToProvince decides the tax check when the invoice has one, else the requester's province does", async () => {
+test("shipToProvince decides the tax check when the invoice has one, else the guessed place of supply does", async () => {
   ok({ shipToProvince: "AB" }); // requester is in ON, but HST is wrong for goods shipped to AB
   const a = makeInvoice("a.pdf");
   await run(a);
@@ -391,10 +392,51 @@ test("shipToProvince decides the tax check when the invoice has one, else the re
   expect((await (await run(b)).json()).status).toBe("pending_approval");
   expect(row(b).ship_to_province).toBe("ON");
 
-  ok({ invoiceNumber: "INV-102", shipToProvince: null }); // falls back to AB, so HST is wrong again
+  ok({ invoiceNumber: "INV-102", shipToProvince: null }); // falls back to the requester's AB, where HST is wrong: only a guess, so a warning
   const c = makeInvoice("c.pdf");
-  await run(c);
-  expect(codes(c)).toContain("WRONG_PROVINCE_CODE");
+  expect((await (await run(c)).json()).status).toBe("pending_approval");
+  expect(flagOf(c, "TAX_PLACE_ASSUMED")).toMatchObject({ severity: "warning", message: expect.stringContaining("place of supply assumed from requester province (AB)") });
+});
+
+// T60: with no ship-to printed, the place of supply is guessed in a fixed order and the source is stored on the invoice.
+describe("place of supply when no ship-to is printed", () => {
+  const gstOnly: Partial<ExtractedInvoice> = { taxes: [{ label: "GST 5%", code: "GST", amountCents: 500 }], totalCents: 10500 };
+  const src = (id: number) => ({ province: row(id).ship_to_province, source: row(id).ship_to_source });
+
+  test("a PO's requester comes first, and a tax that fits it raises nothing", async () => {
+    sql(`UPDATE users SET province = 'AB' WHERE id = 4; INSERT INTO purchase_orders (po_number,vendor_id,requester_user_id,total_cents,currency) VALUES ('PO-1',1,4,50000,'CAD')`);
+    ok({ ...gstOnly, poNumber: "PO-1" }); // requester (user 1) is in ON, the PO's requester in AB
+    const id = makeInvoice();
+    expect((await (await run(id)).json()).flags).toEqual([]);
+    expect(src(id)).toEqual({ province: "AB", source: "po_requester" });
+  });
+
+  test("tax that fits the vendor's province but not the requester's: info only, and that province is stored", async () => {
+    sql("UPDATE vendors SET province_or_state = 'AB' WHERE id = 1"); // requester in ON; 5% GST is right in the vendor's AB
+    ok(gstOnly);
+    const id = makeInvoice();
+    expect((await (await run(id)).json()).status).toBe("pending_approval");
+    expect(flagOf(id, "TAX_MATCHES_OTHER_PROVINCE")).toMatchObject({ severity: "info", message: "Tax matches the vendor province (AB), delivery unconfirmed" });
+    expect(src(id)).toEqual({ province: "AB", source: "vendor" });
+  });
+
+  test("the uploading clerk's province is the last resort: a mismatch is a warning, never a block", async () => {
+    sql("UPDATE users SET province = 'ON', department_id = 1, manager_id = 3 WHERE id = 2"); // a department, so approval routing has somewhere to go
+    ok(gstOnly);
+    const id = makeInvoice();
+    sql(`UPDATE invoices SET requester_id = 2 WHERE id = ${id}`); // keyed in by the clerk, no other requester known
+    const body = await (await run(id)).json();
+    expect(body.status).toBe("pending_approval");
+    expect(flagOf(id, "TAX_PLACE_ASSUMED")).toMatchObject({ severity: "warning", message: expect.stringContaining("place of supply assumed from AP clerk province (ON)") });
+    expect(src(id)).toEqual({ province: "ON", source: "clerk" });
+  });
+
+  test("a printed ship-to is stored as such", async () => {
+    ok({ shipToProvince: "ON" });
+    const id = makeInvoice();
+    await run(id);
+    expect(src(id)).toEqual({ province: "ON", source: "invoice" });
+  });
 });
 
 test("payment_terms_differ (info): the vendor's terms win, for the flag and for the due date", async () => {

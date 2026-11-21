@@ -140,6 +140,8 @@ CREATE TABLE IF NOT EXISTS invoices (
   po_id INTEGER REFERENCES purchase_orders(id),
   contract_id INTEGER REFERENCES contracts(id),
   ship_to_province TEXT,
+  -- Where ship_to_province came from: invoice (printed), po_requester, requester, vendor or clerk (guessed, see rules/placeOfSupply.ts).
+  ship_to_source TEXT CHECK (ship_to_source IN ('invoice','po_requester','requester','vendor','clerk')),
   flags TEXT NOT NULL DEFAULT '[]',
   source_file TEXT,
   extraction_json TEXT,
