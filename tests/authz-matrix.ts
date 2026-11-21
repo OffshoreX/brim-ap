@@ -8,6 +8,8 @@ const ALL = ROLES;
 const CLERK_UP = ["ap_clerk", "finance_manager", "controller_admin"] as const;
 const APPROVERS = ["approver", "finance_manager", "controller_admin"] as const;
 
+const REPORTS = ["finance_manager", "controller_admin", "auditor"] as const;
+
 type Access = "public" | readonly Role[];
 
 //  route (folder under src/app/api)     method   allowed roles
@@ -38,6 +40,9 @@ export const MATRIX: [string, string, Access][] = [
   ["payments/eft-file",                  "GET",   ["finance_manager", "controller_admin", "auditor"]],
   ["inbox/import",                       "POST",  ["ap_clerk", "controller_admin"]],
   ["inbox/other",                        "GET",   ["ap_clerk", "controller_admin", "auditor"]],
+  ["reports/aging",                      "GET",   REPORTS],
+  ["reports/spend",                      "GET",   REPORTS],
+  ["reports/discounts",                  "GET",   REPORTS],
   ["audit",                              "GET",   ["auditor", "controller_admin", "finance_manager"]],
   ["admin/ping",                         "GET",   ["controller_admin"]],
   ["admin/approval-rules",               "GET",   ["controller_admin"]],
