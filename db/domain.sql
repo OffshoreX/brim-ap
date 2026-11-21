@@ -204,7 +204,9 @@ CREATE TABLE IF NOT EXISTS payments (
   reference TEXT,
   status TEXT NOT NULL DEFAULT 'settled',
   prepared_by INTEGER REFERENCES users(id),
-  released_by INTEGER REFERENCES users(id)
+  released_by INTEGER REFERENCES users(id),
+  -- Written only by applyReconciliation (audited); NULL = never reconciled or not paid yet.
+  reconciliation_status TEXT CHECK (reconciliation_status IN ('matched','unmatched','ambiguous','amount_diff'))
 );
 
 CREATE TABLE IF NOT EXISTS card_transactions (

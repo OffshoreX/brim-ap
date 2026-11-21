@@ -44,6 +44,8 @@ export const MATRIX: [string, string, Access][] = [
   ["reports/aging",                      "GET",   REPORTS],
   ["reports/spend",                      "GET",   REPORTS],
   ["reports/discounts",                  "GET",   REPORTS],
+  ["reconciliation",                    "GET",   REPORTS], // also ?format=csv
+  ["reconciliation",                    "POST",  ["finance_manager", "controller_admin"]], // saves each payment's status (audited)
   ["audit",                              "GET",   ["auditor", "controller_admin", "finance_manager"]], // also ?format=csv
   ["audit/verify",                       "GET",   ["auditor", "controller_admin"]],
   ["admin/ping",                         "GET",   ["controller_admin"]],
