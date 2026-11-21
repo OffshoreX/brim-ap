@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { SeverityChip } from "./ui";
+import { Icon } from "./icons";
+import { SeverityChip, Skeleton } from "./ui";
 
 // The UI never decides who may do what: every call goes to the server, which answers 401 or 403.
 // This file only turns those answers into a clear message.
@@ -82,7 +83,7 @@ export function useApi<T>(url: string | null) {
 export function Load<T>({ url, children }: { url: string | null; children: (data: T, reload: () => void) => ReactNode }) {
   const { data, error, reload } = useApi<T>(url);
   if (error) return <p role="alert" className="error-box">{error}</p>; // 401 and 403 text comes from failure()
-  if (data === undefined) return <p className="loading" role="status">Loading…</p>;
+  if (data === undefined) return <Skeleton />;
   return <>{children(data, reload)}</>;
 }
 
@@ -92,10 +93,18 @@ export const money = (cents: number | null | undefined, currency = "") =>
     ? "—"
     : `${cents < 0 ? "-" : ""}${Math.floor(Math.abs(cents) / 100).toLocaleString("en-CA")}.${String(Math.abs(cents) % 100).padStart(2, "0")} ${currency}`.trim();
 
-// Result line shown under a button: green on success, red on error.
+// Success is a toast that fades after a few seconds; an error stays on screen as a banner until the next action.
+// ponytail: the same success text twice in a row does not re-show, fine because each action changes the page.
 export function Notice({ ok, error }: { ok?: string; error?: string }) {
-  if (error) return <p role="alert" className="error">{error}</p>;
-  return ok ? <p role="status" className="ok">{ok}</p> : null;
+  const [gone, setGone] = useState<string>();
+  useEffect(() => {
+    setGone(undefined);
+    if (!ok) return;
+    const t = setTimeout(() => setGone(ok), 5000);
+    return () => clearTimeout(t);
+  }, [ok]);
+  if (error) return <p role="alert" className="error"><Icon name="error" />{error}</p>;
+  return ok && gone !== ok ? <p role="status" className="ok toast"><Icon name="approved" />{ok}<button className="secondary" aria-label="Dismiss message" onClick={() => setGone(ok)}><Icon name="rejected" /></button></p> : null;
 }
 
 // Backend flags are {code, message, severity} objects.
@@ -103,7 +112,7 @@ export type Flag = { code: string; message: string; severity?: string };
 // Plain names for the budget and outlier warnings, shown before the server's own reason text.
 export const FLAG_TITLE: Record<string, string> = { department_over_budget: "Department over budget", amount_outlier: "Unusual amount for this vendor" };
 export function Flags({ flags }: { flags: Flag[] }) {
-  if (flags.length === 0) return <p className="empty">No flags. Every check passed.</p>;
+  if (flags.length === 0) return <p className="empty"><Icon name="approved" />No flags. Every check passed.</p>;
   return (
     <ul className="flags">
       {flags.map((f, i) => (

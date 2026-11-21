@@ -9,12 +9,12 @@ type Row = { invoiceId: number; stepNo: number; role: string; reason: string | n
 // GET /api/approvals/inbox. Approve or reject on the invoice page.
 export default function ApprovalsPage() {
   return (
-    <main>
+    <main id="main">
       <h1>Approvals inbox</h1>
       <RoleHome page="/approvals" />
       <Load<Row[]> url="/api/approvals/inbox">
         {(rows) =>
-          rows.length === 0 ? <Empty>Nothing is waiting for your approval.</Empty> : (
+          rows.length === 0 ? <Empty href="/invoices" next="Browse all invoices">Nothing is waiting for your approval.</Empty> : (
             <Table>
               <thead><tr><th>Invoice</th><th>Step</th><th>As</th><th className="num">Total</th><th>Why you</th></tr></thead>
               <tbody>

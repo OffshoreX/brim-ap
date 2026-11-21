@@ -30,7 +30,7 @@ function RuleRow({ rule, saved }: { rule: Rule; saved: () => void }) {
 // GET /api/admin/approval-rules, PUT /api/admin/approval-rules/{id} (the server checks the thresholds still rise).
 export default function ApprovalRulesPage() {
   return (
-    <main>
+    <main id="main">
       <h1>Approval rules</h1>
       <p>An invoice over the amount gets an extra approval step by that role.</p>
       <Load<{ rules: Rule[] }> url="/api/admin/approval-rules">

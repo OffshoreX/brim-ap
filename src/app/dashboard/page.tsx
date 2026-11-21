@@ -9,7 +9,7 @@ type Dash = { countsByStatus: Record<string, number>; needsReview: number; dueTh
 // GET /api/dashboard
 export default function DashboardPage() {
   return (
-    <main>
+    <main id="main">
       <h1>Dashboard</h1>
       <RoleHome page="/dashboard" />
       <Load<Dash> url="/api/dashboard">

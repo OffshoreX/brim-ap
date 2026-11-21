@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useRef, useState, type DragEvent } from "react";
 import { Empty, StatusBadge, Table } from "./ui";
+import { Icon } from "./icons";
 import { Flags, sendFile, type Flag } from "./api";
 
 // Same shape as FileResult in src/server/upload.ts. `duplicate` is optional: the server does not send it yet (see PR).
@@ -45,11 +46,11 @@ export default function BatchUpload() {
   return (
     <>
       <div className="dropzone" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
-        <p>Drag invoice files here, or</p>
+        <p><Icon name="upload" /> Drag invoice files here, or</p>
         <input ref={input} type="file" multiple accept="application/pdf,image/png,image/jpeg" disabled={busy}
           aria-label="Invoice files" onChange={(e) => { start(e.target.files ?? []); e.target.value = ""; }} />
       </div>
-      {rows.length === 0 ? <Empty>No files yet. Each file gets its own row and result.</Empty> : (
+      {rows.length === 0 ? <Empty href="/invoices" next="See existing invoices">No files yet. Each file gets its own row and result.</Empty> : (
         <Table>
           <thead><tr><th>File</th><th>Progress</th><th>Invoice</th><th>Status</th><th>Flags</th></tr></thead>
           <tbody>

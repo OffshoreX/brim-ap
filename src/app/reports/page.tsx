@@ -1,5 +1,6 @@
 "use client";
 import type { MeResponse } from "@/contracts";
+import { Skeleton } from "@/components/ui";
 import { useApi } from "@/components/api";
 import { ReportSection } from "@/components/Charts";
 import { AgingPanel, DiscountsPanel, REPORT_ROLES, SpendPanel } from "@/components/ReportCharts";
@@ -10,10 +11,10 @@ const csv = (path: string, filename: string) => ({ href: `/api/reports/${path}${
 export default function ReportsPage() {
   const { data, error } = useApi<MeResponse>("/api/me");
   return (
-    <main>
+    <main id="main">
       <h1>Reports</h1>
       {error ? <p role="alert" className="error-box">{error}</p>
-        : !data ? <p className="loading" role="status">Loading…</p>
+        : !data ? <Skeleton />
         : !REPORT_ROLES.includes(data.user.role) ? <p role="alert" className="error-box">Not allowed: reports are for finance managers, controllers and auditors.</p>
         : (
           <>

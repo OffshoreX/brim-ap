@@ -1,7 +1,7 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
-import { Table } from "@/components/ui";
+import { Table, ymd } from "@/components/ui";
 import type { MeResponse } from "@/contracts";
 import { Load, Notice, post, useApi } from "@/components/api";
 
@@ -29,7 +29,7 @@ export default function VendorPage() {
   }
 
   return (
-    <main>
+    <main id="main">
       <h1>Vendor {id}</h1>
       <Load<Vendor> url={`/api/vendors/${id}?v=${version}`}>
         {(v) => (
@@ -46,13 +46,13 @@ export default function VendorPage() {
               <tbody>
                 {v.bankChanges.map((c) => (
                   <tr key={c.id}>
-                    <td>{c.changed_at}</td><td>{c.request_channel}</td><td>…{c.old_account_last4}</td><td>…{c.new_account_last4}</td><td>{c.status}</td>
-                    <td>{c.verified_by_callback ? `Yes, by user ${c.verified_by_user_id} on ${c.verified_at}` : c.status === "rejected" ? `Rejected by user ${c.verified_by_user_id}` : "Not verified"}</td>
+                    <td>{ymd(c.changed_at)}</td><td>{c.request_channel}</td><td>…{c.old_account_last4}</td><td>…{c.new_account_last4}</td><td>{c.status}</td>
+                    <td>{c.verified_by_callback ? `Yes, by user ${c.verified_by_user_id} on ${ymd(c.verified_at)}` : c.status === "rejected" ? `Rejected by user ${c.verified_by_user_id}` : "Not verified"}</td>
                     <td>
                       {canVerify && c.status === "pending" && (
                         <>
                           <button onClick={() => act(`/api/vendors/${id}/bank-change/verify`, { verified: true }, "Change verified and applied")}>Callback confirmed</button>
-                          <button onClick={() => act(`/api/vendors/${id}/bank-change/verify`, { verified: false }, "Change rejected")}>Callback failed</button>
+                          <button className="secondary" onClick={() => act(`/api/vendors/${id}/bank-change/verify`, { verified: false }, "Change rejected")}>Callback failed</button>
                         </>
                       )}
                     </td>

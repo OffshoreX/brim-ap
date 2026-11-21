@@ -22,7 +22,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main>
+    <main id="main">
       <h1>Sign in</h1>
       <Load<UsersResponse> url="/api/users">
         {({ users }) => (

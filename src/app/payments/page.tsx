@@ -1,7 +1,8 @@
 "use client";
 import { useState, type FormEvent } from "react";
-import { Empty, StatusBadge, Table } from "@/components/ui";
+import { Empty, StatusBadge, Table, ymd } from "@/components/ui";
 import { download, Load, money, Notice, post, useApi } from "@/components/api";
+import { Icon } from "@/components/icons";
 import RoleHome from "@/components/RoleHome";
 import type { MeResponse, Role } from "@/contracts";
 
@@ -29,7 +30,7 @@ export default function PaymentsPage() {
   }
 
   return (
-    <main>
+    <main id="main">
       <h1>Payments</h1>
       <RoleHome page="/payments" />
       {can("ap_clerk", "finance_manager", "controller_admin") && <form onSubmit={prepare} className="inline">
@@ -37,19 +38,19 @@ export default function PaymentsPage() {
         <label>Method{" "}
           <select name="method"><option value="">Vendor default</option><option>EFT</option><option>CHEQUE</option><option>CARD</option></select>
         </label>
-        <button type="submit">Prepare payment</button>
+        <button type="submit"><Icon name="paid" />Prepare payment</button>
       </form>}
       <Notice {...msg} />
       <Load<Pay[]> url={`/api/payments?v=${version}`}>
-        {(rows) => rows.length === 0 ? <Empty>No payments yet. Prepare one from an approved invoice.</Empty> : (
+        {(rows) => rows.length === 0 ? <Empty href="/invoices" next="Find an approved invoice">No payments yet. Prepare one from an approved invoice.</Empty> : (
           <Table>
             <thead><tr><th>#</th><th>Invoice</th><th>Method</th><th>Status</th><th>Scheduled</th><th className="num">Amount</th><th>Reference</th><th></th></tr></thead>
             <tbody>
               {rows.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.id}</td><td>{p.invoiceNumber}</td><td>{p.method}</td><td><StatusBadge status={p.status} /></td><td>{p.scheduledDate ?? ""}</td>
+                  <td>{p.id}</td><td>{p.invoiceNumber}</td><td>{p.method}</td><td><StatusBadge status={p.status} /></td><td>{ymd(p.scheduledDate)}</td>
                   <td className="num">{money(p.amountCents, p.currency)}</td><td>{p.reference ?? ""}</td>
-                  <td>{p.status === "scheduled" && can("finance_manager", "controller_admin") && <button onClick={() => act("/api/payments/release", { paymentId: p.id }, `Payment ${p.id} released`)}>Release</button>}</td>
+                  <td>{p.status === "scheduled" && can("finance_manager", "controller_admin") && <button onClick={() => act("/api/payments/release", { paymentId: p.id }, `Payment ${p.id} released`)}><Icon name="paid" />Release</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -58,7 +59,7 @@ export default function PaymentsPage() {
       </Load>
       {can("finance_manager", "controller_admin", "auditor") && <>
       <h2>EFT file</h2>
-      <p><button onClick={async () => setMsg({ error: await download("/api/payments/eft-file", "eft-file.csv") })}>Download EFT file (released EFT payments)</button></p>
+      <p><button onClick={async () => setMsg({ error: await download("/api/payments/eft-file", "eft-file.csv") })}><Icon name="download" />Download EFT file (released EFT payments)</button></p>
       <h2>Cheques to print</h2>
       <Load<{ cheques: Cheque[] }> url={`/api/payments/cheques?v=${version}`}>
         {({ cheques }) =>

@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { MeResponse, Role } from "@/contracts";
 import { FORBIDDEN, post, useApi } from "./api";
+import { LogoMark } from "./icons";
 
 // Which links each role sees. Looks only: the server still answers 403 on any page or call the role may not use.
 const ALL: Role[] = ["employee", "ap_clerk", "approver", "finance_manager", "controller_admin", "auditor"];
@@ -41,8 +42,9 @@ export default function Header() {
   }
   return (
     <>
+    <a href="#main" className="skip">Skip to content</a>
     <header className="topbar">
-      <strong className="brand">brim-ap</strong>
+      <Link href="/" className="brand"><LogoMark /> Harborline AP</Link>
       <nav aria-label="Main">
         {linksFor(data?.user.role).map(([href, label]) => (
           <Link key={href} href={href} aria-current={path === href || path.startsWith(href + "/") ? "page" : undefined}>{label}</Link>
@@ -50,10 +52,10 @@ export default function Header() {
       </nav>
       <span className="who">
         {data ? <>{data.user.name} <span className="role">{data.user.role.replaceAll("_", " ")}</span></> : error ? "Not signed in" : "…"}{" "}
-        {data ? <button onClick={signOut}>Sign out</button> : <Link href="/login">Sign in</Link>}
+        {data ? <button className="secondary" onClick={signOut}>Sign out</button> : <Link href="/login">Sign in</Link>}
       </span>
     </header>
-    {denied && <div role="alert" className="banner">{denied} <button onClick={() => setDenied(undefined)}>Dismiss</button></div>}
+    {denied && <div role="alert" className="banner">{denied} <button className="secondary" onClick={() => setDenied(undefined)}>Dismiss</button></div>}
     </>
   );
 }
