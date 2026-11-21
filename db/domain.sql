@@ -48,7 +48,15 @@ CREATE TABLE IF NOT EXISTS vendor_bank_changes (
   request_channel TEXT,
   verified_by_callback INTEGER CHECK (verified_by_callback IN (0,1)),
   old_account_last4 TEXT,
-  new_account_last4 TEXT
+  new_account_last4 TEXT,
+  -- Workflow (T32): a request stays 'pending' with the full new details until a different user verifies it.
+  -- Dataset rows are history that already took effect, so they default to 'applied'.
+  status TEXT NOT NULL DEFAULT 'applied' CHECK (status IN ('pending','applied','rejected')),
+  new_bank_institution TEXT,
+  new_bank_transit TEXT,
+  new_bank_account TEXT,
+  verified_by_user_id INTEGER REFERENCES users(id),
+  verified_at TEXT
 );
 
 -- Which fee columns are filled depends on billing_type (fixed fee, rate card, blanket, retainer).
