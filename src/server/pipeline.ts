@@ -6,6 +6,7 @@ import { createChain } from "./approvals";
 import { getDb } from "./db";
 import { transition } from "./invoiceStatus";
 import { budgetAndAnomalyFlags } from "./budgetAnomaly";
+import { extractionFailure, writeFindings, writeStep, type StepStatus } from "./processLog";
 import { AS_OF } from "./replayHistory";
 import { checkArithmetic } from "./rules/arithmetic";
 import { checkVendorBankRisk, readInvoiceBank, type BankChangeRow } from "./rules/bank";
@@ -235,16 +236,26 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
   if (first.status !== "received") throw new PipelineError(409, `Invoice is ${first.status}, not received`);
 
   // The slow model call happens outside the transaction; everything after it is one atomic step.
+  const extractStart = performance.now();
   const extracted = await extract(first.source_file);
+  const extractMs = performance.now() - extractStart;
 
   return db.transaction(() => {
     // Re-check: another request may have processed it while we waited on the model.
     const now = db.prepare("SELECT status FROM invoices WHERE id = ?").get(invoiceId) as { status: string };
     if (now.status !== "received") throw new PipelineError(409, `Invoice is ${now.status}, not received`);
 
+    // Processing log (T71): one row per step. These only write; no rule reads them back, and a failed write is swallowed (processLog.ts).
+    const since = (start: number) => performance.now() - start;
+    const step = (name: string, status: StepStatus, detail: string, ms = 0) => writeStep(db, invoiceId, name, status, detail, ms);
+    const stepFlags = (name: string, found: Finding[], okDetail: string, ms: number) => writeFindings(db, invoiceId, name, found, okDetail, ms);
+    const skipAll = (names: string[], why: string) => names.forEach((n) => step(n, "skipped", why));
+    let routingLogged = false;
+
     // Persists flags, audits them, moves the status. Errors send it to a human; warnings ride along.
     const finish = (flags: Finding[], approverId: number | null): ProcessResult => {
       const status = flags.some((f) => f.severity === "error") ? "needs_review" : "pending_approval";
+      if (status === "needs_review" && !routingLogged) step("approval_routing", "skipped", "Not routed to an approver: the invoice needs review first");
       db.prepare("UPDATE invoices SET flags = ? WHERE id = ?").run(JSON.stringify(flags), invoiceId);
       writeAudit({ actorId, action: "invoice.checks", entity: "invoice", entityId: invoiceId, before: { flags: [] }, after: { flags } });
       transition(invoiceId, status, actorId);
@@ -252,13 +263,20 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     };
 
     if (extracted.status !== "ok") {
+      step("extract", "failed", extractionFailure(extracted.reason), extractMs);
       writeAudit({ actorId, action: "invoice.extraction_failed", entity: "invoice", entityId: invoiceId, after: { reason: extracted.reason } });
       return finish([error("extraction_failed", extracted.reason)], null);
     }
     const x: ExtractedInvoice = extracted.invoice;
+    step(
+      "extract", x.notes ? "flagged" : "ok",
+      `${extracted.cached ? "Read the saved answer for this file (no model call)" : "Called the model"}; schema validation passed${x.notes ? "; the document contained instructions, which were ignored" : ""}`,
+      extractMs
+    );
 
     // Vendor match (rules/vendorMatch.ts). The name decides first, so a tax id that disagrees with the named vendor is caught, not trusted.
     // Only when the name finds no one is the tax id (digits only) used to pick the vendor.
+    const vendorStart = performance.now();
     const vendors = db
       .prepare("SELECT id, name, status, gst_hst_number AS taxNumber, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at, payment_terms_days, early_pay_discount, province_or_state FROM vendors")
       .all() as (Vendor & { taxNumber: string | null })[];
@@ -273,6 +291,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     const flags: Finding[] = [];
     // Text inside the document is data. It is shown to the clerk and nothing in it is acted on.
     if (x.notes) flags.push(warning("document_contains_instructions", `The document contains an instruction, ignored: "${x.notes.slice(0, 300)}"`));
+    const vendorFlagsFrom = flags.length;
     if (vendor && match.status === "matched" && match.by === "tax_number")
       flags.push(warning("vendor_matched_by_tax_id", `No vendor is named "${x.vendorName}"; matched to "${vendor.name}" by tax id ${x.vendorTaxId}`));
     const vendorTax = digitsOf(vendor?.taxNumber);
@@ -283,6 +302,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     if (match.status === "ambiguous") flags.push(error("vendor_ambiguous", `${match.ids.length} vendors match "${x.vendorName}"`));
     // Matched, but only after ignoring formatting: say so, so a clerk can see which record was used.
     if (vendor && match.status === "matched" && match.by === "normalized_name") flags.push(warning("vendor_name_variant", `"${x.vendorName}" was matched to vendor "${vendor.name}"`));
+    stepFlags("vendor_match", flags.slice(vendorFlagsFrom), vendor ? `Matched vendor ${vendor.name} by name` : "Matched a vendor", since(vendorStart));
     const po = x.poNumber
       ? (db.prepare("SELECT id, vendor_id, department_id, requester_user_id, total_cents, currency FROM purchase_orders WHERE po_number = ?").get(x.poNumber) as
           | { id: number; vendor_id: number; department_id: number | null; requester_user_id: number | null; total_cents: number; currency: string }
@@ -290,16 +310,21 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
       : undefined;
 
     // Terms we cannot read mean no discount, and a clerk is told why. A missing due date is worked out from the vendor's terms.
+    const termsStart = performance.now();
+    const termsFlagsFrom = flags.length;
     const terms = parseEarlyPayTerms(vendor?.early_pay_discount);
     if (terms.kind === "unparsed") flags.push(warning("early_pay_terms_unparsed", terms.note));
     // The vendor's terms win over the invoice's text: when they differ the due date comes from the vendor record too.
     const termsFlags = vendor ? checkPaymentTerms(x.paymentTerms, vendor.payment_terms_days) : [];
     flags.push(...termsFlags);
     const dueDate = (termsFlags.length === 0 ? x.dueDate : null) ?? (vendor ? dueDateFor(x.invoiceDate, vendor.payment_terms_days) : null);
+    stepFlags("payment_terms", flags.slice(termsFlagsFrom), "Payment terms and due date agree with the vendor record", since(termsStart));
 
     // Amounts the checks and the stored row share. CAD is used only to compare against limits and other CAD records.
     const subtotalCents = sum(x.lines.map((l) => l.amountCents));
     const isCredit = x.isCreditNote === true || x.totalCents < 0;
+    const fxStart = performance.now();
+    const fxFlagsFrom = flags.length;
     const fx = rateFor(db)(x.currency, "CAD", x.invoiceDate);
     let totalCadCents: number | null = null;
     try {
@@ -307,6 +332,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     } catch (e) {
       flags.push(error("fx_unknown", e instanceof Error ? e.message : "Cannot convert currency"));
     }
+    stepFlags("currency_conversion", flags.slice(fxFlagsFrom), x.currency === "CAD" ? "The invoice is in CAD, no conversion needed" : `Converted ${x.currency} to CAD at the stored daily rate`, since(fxStart));
     const ctx = db
       .prepare(
         `SELECT u.province, u.role, m.approval_limit_cents AS limitCents FROM invoices i LEFT JOIN users u ON u.id = i.requester_id
@@ -319,7 +345,9 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     const clerkUploaded = ctx.role === "ap_clerk";
     const supply = resolveSupply({ printed: x.shipToProvince, poRequester: userProvince(po?.requester_user_id), requester: clerkUploaded ? null : ctx.province, vendor: vendor?.province_or_state, clerk: clerkUploaded ? ctx.province : null });
     const contract = vendorId !== null && !isCredit ? pickContract(db, vendorId, x.invoiceDate) : null;
+    const taxStart = performance.now();
     const tax = vendorId !== null ? taxFindings(db, x, vendorId, invoiceId, supply) : null;
+    const taxMs = since(taxStart);
     const used = tax ? tax.supply : supply.chosen; // the province the tax was finally judged by, and where it came from
     const province = used?.province ?? null;
 
@@ -345,47 +373,68 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     });
 
     // Checks. Each is a plain function; this code only gathers their inputs from the DB.
-    flags.push(...checkArithmetic(x.lines.map((l) => ({ totalCents: l.amountCents })), x.taxes, x.totalCents));
+    // Runs one rule family, adds its findings to the flags in the same order as before, and logs the step.
+    const checked = (name: string, okDetail: string, fn: () => Finding[]) => {
+      const start = performance.now();
+      const found = fn();
+      flags.push(...found);
+      stepFlags(name, found, okDetail, since(start));
+    };
+    checked("arithmetic", "Line items, taxes and total add up", () => checkArithmetic(x.lines.map((l) => ({ totalCents: l.amountCents })), x.taxes, x.totalCents));
     if (vendor && vendorId !== null) {
       flags.push(...tax!.findings);
-      const others = db
-        .prepare("SELECT id, invoice_number, total_cents, invoice_date FROM invoices WHERE vendor_id = ? AND id != ? AND invoice_number != ''")
-        .all(vendorId, invoiceId) as { id: number; invoice_number: string; total_cents: number; invoice_date: string }[];
-      flags.push(
-        ...findDuplicates(
+      stepFlags("tax", tax!.findings, `Tax codes and amounts match the rules for ${province ?? "the place of supply"}`, taxMs);
+      checked("duplicates", "No duplicate or near-duplicate among this vendor's other invoices", () => {
+        const others = db
+          .prepare("SELECT id, invoice_number, total_cents, invoice_date FROM invoices WHERE vendor_id = ? AND id != ? AND invoice_number != ''")
+          .all(vendorId, invoiceId) as { id: number; invoice_number: string; total_cents: number; invoice_date: string }[];
+        return findDuplicates(
           { id: String(invoiceId), vendorId: String(vendorId), number: x.invoiceNumber, totalCents: x.totalCents, date: x.invoiceDate, kind: isCredit ? "credit_note" : "invoice" },
           others.map((o) => ({ id: String(o.id), vendorId: String(vendorId), number: o.invoice_number, totalCents: o.total_cents, date: o.invoice_date, kind: o.total_cents < 0 ? "credit_note" : "invoice" }))
-        )
-      );
-      flags.push(...bankFindings(db, vendor, x));
-      // A request still waiting for its callback is not on file yet. Whatever account this invoice shows, hold it until a finance user verifies.
-      if (db.prepare("SELECT 1 FROM vendor_bank_changes WHERE vendor_id = ? AND status = 'pending'").get(vendorId))
-        flags.push(error("bank_change_unverified", "Vendor bank change not yet verified by callback"));
+        );
+      });
+      checked("bank", "Bank details agree with the vendor record", () => {
+        const found = bankFindings(db, vendor, x);
+        // A request still waiting for its callback is not on file yet. Whatever account this invoice shows, hold it until a finance user verifies.
+        if (db.prepare("SELECT 1 FROM vendor_bank_changes WHERE vendor_id = ? AND status = 'pending'").get(vendorId))
+          found.push(error("bank_change_unverified", "Vendor bank change not yet verified by callback"));
+        return found;
+      });
 
       if (isCredit) {
-        const credit = creditFindings(db, x, vendorId, invoiceId);
-        flags.push(...credit.findings);
-        if (credit.originalId !== null) writeAudit({ actorId, action: "invoice.credit_linked", entity: "invoice", entityId: invoiceId, after: { originalInvoiceId: credit.originalId } });
+        checked("credit_note", "The credit note matches an earlier invoice of this vendor", () => {
+          const credit = creditFindings(db, x, vendorId, invoiceId);
+          if (credit.originalId !== null) writeAudit({ actorId, action: "invoice.credit_linked", entity: "invoice", entityId: invoiceId, after: { originalInvoiceId: credit.originalId } });
+          return credit.findings;
+        });
+        skipAll(["po_match", "contract_match", "split", "cross_payment", "budget_anomaly"], "Not run for a credit note");
       } else {
         // A PO is checked when the invoice names one or the vendor must have one (P13); a contract when the vendor has one.
-        if (x.poNumber || vendor.requires_po) flags.push(...poFindings(db, po, x, vendorId, invoiceId, subtotalCents));
-        if (contract) flags.push(...contractFindings(db, contract, x, vendorId, invoiceId, subtotalCents));
+        if (x.poNumber || vendor.requires_po) checked("po_match", "The invoice fits the purchase order", () => poFindings(db, po, x, vendorId, invoiceId, subtotalCents));
+        else step("po_match", "skipped", "The invoice names no PO and the vendor does not require one");
+        if (contract) checked("contract_match", "The invoice fits the vendor contract", () => contractFindings(db, contract, x, vendorId, invoiceId, subtotalCents));
+        else step("contract_match", "skipped", "No contract on file for this vendor");
         if (totalCadCents !== null) {
           // The limit is the department manager's own: pieces that each fit under it but together do not are a split.
-          if (ctx.limitCents) {
-            const recent = db
-              .prepare("SELECT CAST(id AS TEXT) AS id, CAST(vendor_id AS TEXT) AS vendorId, total_cad_cents AS totalCents, invoice_date AS date FROM invoices WHERE vendor_id = ? AND id != ? AND total_cad_cents IS NOT NULL AND status != 'rejected' AND ABS(julianday(invoice_date) - julianday(?)) <= ?")
-              .all(vendorId, invoiceId, x.invoiceDate, SPLIT_WINDOW_DAYS) as { id: string; vendorId: string; totalCents: number; date: string }[];
-            flags.push(...findSplitInvoices({ id: String(invoiceId), vendorId: String(vendorId), totalCents: totalCadCents, date: x.invoiceDate }, recent, ctx.limitCents, SPLIT_WINDOW_DAYS));
-          }
-          flags.push(...crossFindings(db, vendor, invoiceId, x.invoiceDate, totalCadCents));
+          if (ctx.limitCents)
+            checked("split", "No split of one purchase across several invoices", () => {
+              const recent = db
+                .prepare("SELECT CAST(id AS TEXT) AS id, CAST(vendor_id AS TEXT) AS vendorId, total_cad_cents AS totalCents, invoice_date AS date FROM invoices WHERE vendor_id = ? AND id != ? AND total_cad_cents IS NOT NULL AND status != 'rejected' AND ABS(julianday(invoice_date) - julianday(?)) <= ?")
+                .all(vendorId, invoiceId, x.invoiceDate, SPLIT_WINDOW_DAYS) as { id: string; vendorId: string; totalCents: number; date: string }[];
+              return findSplitInvoices({ id: String(invoiceId), vendorId: String(vendorId), totalCents: totalCadCents, date: x.invoiceDate }, recent, ctx.limitCents!, SPLIT_WINDOW_DAYS);
+            });
+          else step("split", "skipped", "The department manager has no approval limit to compare against");
+          checked("cross_payment", "No matching payment already seen on the bank or card statements", () => crossFindings(db, vendor, invoiceId, x.invoiceDate, totalCadCents));
           // Warnings only (bonus rules): a department over its budget so far, and an amount far above this vendor's usual.
-          const requesterId = (db.prepare("SELECT requester_id AS r FROM invoices WHERE id = ?").get(invoiceId) as { r: number | null }).r;
-          flags.push(...budgetAndAnomalyFlags(db, { invoiceId, vendorId, requesterId, totalCadCents, asOf: AS_OF }));
-        }
+          checked("budget_anomaly", "Within budget and in line with this vendor's usual amounts", () => {
+            const requesterId = (db.prepare("SELECT requester_id AS r FROM invoices WHERE id = ?").get(invoiceId) as { r: number | null }).r;
+            return budgetAndAnomalyFlags(db, { invoiceId, vendorId, requesterId, totalCadCents, asOf: AS_OF });
+          });
+        } else skipAll(["split", "cross_payment", "budget_anomaly"], "The total could not be converted to CAD");
       }
 
       // Coding is decided per line (rules/coding.ts), applied to the line and audited with its reason.
+      const codingStart = performance.now();
       const past = db
         .prepare(
           `SELECT l.invoice_id AS invoiceId, l.description, g.code AS accountCode FROM invoice_lines l
@@ -417,17 +466,27 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
       });
       writeAudit({ actorId, action: "invoice.coding_suggestion", entity: "invoice", entityId: invoiceId, after: { lines: results } });
       const missing = results.filter((r) => r.status === "coding_needed").length;
-      if (missing) flags.push(warning("coding_needed", `${missing} line(s) have no account; a clerk or manager must set it before approval`));
+      const codingFlags: Finding[] = missing ? [warning("coding_needed", `${missing} line(s) have no account; a clerk or manager must set it before approval`)] : [];
+      flags.push(...codingFlags);
+      stepFlags("coding", codingFlags, `Suggested an account and tax code for ${results.length} line(s)`, since(codingStart));
+    } else {
+      skipAll(["tax", "duplicates", "bank", "po_match", "contract_match", "split", "cross_payment", "budget_anomaly", "coding"], "No vendor was matched");
     }
 
     // Routing only matters if nothing needs a human first.
     if (flags.some((f) => f.severity === "error")) return finish(flags, null);
     // The chain is stored as pending steps; if nobody can fill a step, a human looks at it.
+    const routeStart = performance.now();
     try {
       const steps = createChain(invoiceId, actorId);
+      step("approval_routing", "ok", `Built an approval chain of ${steps.length} step(s)`, since(routeStart));
+      routingLogged = true;
       return finish(flags, Number(steps[0].userId));
     } catch (e) {
-      return finish([...flags, error("routing_failed", e instanceof Error ? e.message : "approval routing failed")], null);
+      const message = e instanceof Error ? e.message : "approval routing failed";
+      step("approval_routing", "failed", message, since(routeStart));
+      routingLogged = true;
+      return finish([...flags, error("routing_failed", message)], null);
     }
   })();
 }

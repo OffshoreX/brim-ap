@@ -13,7 +13,7 @@ export class ViewError extends Error {
 }
 
 // The one place that says which invoices a user may see (employee: own, approver: has a step, others: all).
-function visibleSql(user: User, alias = "i"): { sql: string; args: unknown[] } {
+export function visibleSql(user: User, alias = "i"): { sql: string; args: unknown[] } {
   if (user.role === "employee") return { sql: `${alias}.requester_id = ?`, args: [user.id] };
   if (user.role === "approver")
     return { sql: `${alias}.id IN (SELECT invoice_id FROM approval_steps WHERE user_id = ?)`, args: [user.id] };
