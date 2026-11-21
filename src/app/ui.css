@@ -3,7 +3,7 @@
 :root {
   /* colour: neutral greys, one accent, and four status colours (each a text / background / border trio, text >= 4.5:1 on its background) */
   --ink:#1c2430; --muted:#566170; --line:#d5dbe3; --bg:#f4f6f9; --card:#fff; --head:#e9edf2; --zebra:#f8fafc; --hover:#eef3fb;
-  --accent:#1d4ed8; --accent-ink:#fff; --focus:#7aa2ff; --nav:#111827; --nav-ink:#e5eaf3; --nav-on:#374151;
+  --accent:#1d4ed8; --accent-ink:#fff; --focus:#1d4ed8; --field-border:#7d8797; --nav-line:#9ca3af; --pill-line:#6b7280; --nav:#111827; --nav-ink:#e5eaf3; --nav-on:#374151;
   --ok:#14532d; --ok-bg:#e8f8ee; --ok-line:#86d3a0;
   --warn:#7c3f06; --warn-bg:#fff4e0; --warn-line:#f0b45f;
   --bad:#991b1b; --bad-bg:#fdecec; --bad-line:#f2a3a3;
@@ -13,7 +13,7 @@
   /* spacing scale */
   --s1:.25rem; --s2:.5rem; --s3:.75rem; --s4:1rem; --s5:1.5rem; --s6:2.5rem;
   /* shape and depth */
-  --radius:8px; --radius-sm:6px; --pill:999px; --shadow:0 1px 2px rgb(16 24 40 / .08), 0 1px 3px rgb(16 24 40 / .06); --shadow-lg:0 6px 20px rgb(16 24 40 / .18);
+  --radius:8px; --radius-sm:6px; --radius-xs:2px; --pill:999px; --shadow:0 1px 2px rgb(16 24 40 / .08), 0 1px 3px rgb(16 24 40 / .06); --shadow-lg:0 6px 20px rgb(16 24 40 / .18);
   /* type scale (system fonts, nothing to download) */
   --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --fs-xs:.78rem; --fs-sm:.875rem; --fs-md:.9375rem; --fs-lg:1.125rem; --fs-xl:1.5rem; --fs-2xl:2.25rem;
@@ -28,9 +28,10 @@ code { font-family: var(--mono); font-size: var(--fs-sm); }
 .num, td.num, th.num, .fields dd { font-variant-numeric: tabular-nums; }
 .icon { width: 1em; height: 1em; vertical-align: -.125em; margin-right: .35em; flex: none; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.topbar :focus-visible { outline-color: #fff; } /* the blue ring would vanish on the dark bar */
 
 /* controls: the default button is the primary one, .secondary is the quiet one */
-button, select, input { font: inherit; padding: var(--s1) var(--s3); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); min-height: 2.25rem; }
+button, select, input { font: inherit; padding: var(--s1) var(--s3); border: 1px solid var(--field-border); border-radius: var(--radius-sm); background: var(--card); color: var(--ink); min-height: 2.25rem; }
 input:hover, select:hover { border-color: var(--muted); }
 input:focus-visible, select:focus-visible, button:focus-visible { border-color: var(--accent); }
 label { display: inline-flex; gap: var(--s2); align-items: center; }
@@ -46,22 +47,24 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .skip { position: absolute; left: var(--s2); top: -4rem; background: var(--card); padding: var(--s2) var(--s3); border-radius: var(--radius-sm); z-index: 10; }
 .skip:focus { top: var(--s2); }
 .topbar { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; padding: var(--s2) var(--s4); background: var(--nav); color: #fff; }
-.topbar a { color: var(--nav-ink); text-decoration: none; padding: var(--s1) var(--s2); border-radius: var(--radius-sm); }
+.topbar a { color: var(--nav-ink); text-decoration: none; display: inline-flex; align-items: center; min-height: 2.25rem; padding: var(--s1) var(--s2); border-radius: var(--radius-sm); }
 .topbar a:hover { background: var(--nav-on); }
 .topbar a[aria-current="page"] { background: var(--nav-on); color: #fff; box-shadow: inset 0 -2px 0 #fff; }
 .topbar .brand { display: inline-flex; align-items: center; gap: var(--s2); font-weight: 700; font-size: var(--fs-lg); color: #fff; padding-left: 0; }
 .topbar .brand .logo { color: var(--accent); background: #fff; border-radius: var(--radius-sm); }
 .topbar nav { display: flex; gap: var(--s1); flex-wrap: wrap; flex: 1; }
 .topbar .who { display: flex; align-items: center; gap: var(--s2); }
-.topbar button.secondary { background: transparent; color: #fff; border-color: #9ca3af; }
+.topbar button.secondary { background: transparent; color: #fff; border-color: var(--nav-line); }
 .topbar button.secondary:hover { background: var(--nav-on); }
-.role { background: var(--nav-on); border-radius: var(--pill); padding: 0 var(--s2); font-size: var(--fs-xs); text-transform: capitalize; border: 1px solid #6b7280; }
+.role { background: var(--nav-on); border-radius: var(--pill); padding: 0 var(--s2); font-size: var(--fs-xs); text-transform: capitalize; border: 1px solid var(--pill-line); }
 .footer { padding: var(--s4); text-align: center; color: var(--muted); font-size: var(--fs-sm); border-top: 1px solid var(--line); }
 main { padding: var(--s5) var(--s4) var(--s6); max-width: 72rem; margin: 0 auto; }
 
 /* tables: sticky header, zebra rows, hover, sideways scroll on narrow screens */
 .table-wrap { overflow: auto; max-height: 70vh; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); margin: var(--s2) 0 var(--s4); }
 table { border-collapse: collapse; width: 100%; min-width: 34rem; }
+table:not(:has(th:nth-child(4))) { min-width: 18rem; } /* two or three columns fit a panel without clipping the last one */
+td > a { display: inline-block; padding: var(--s2) 0; margin: calc(var(--s2) * -1) 0; } /* 36px+ target, row height unchanged */
 th, td { border-bottom: 1px solid var(--line); padding: var(--s2) var(--s3); text-align: left; vertical-align: top; }
 thead th { position: sticky; top: 0; background: var(--head); z-index: 1; font-size: var(--fs-sm); white-space: nowrap; }
 tbody tr:nth-child(even) { background: var(--zebra); }
@@ -168,7 +171,8 @@ pre { overflow: auto; font-family: var(--mono); font-size: var(--fs-sm); }
 .report { margin-bottom: var(--s4); }
 .chart { margin: 0 0 var(--s4); max-width: 40rem; }
 .chart figcaption { font-weight: 600; margin-bottom: var(--s1); }
-.chart svg { width: 100%; height: auto; }
+.chart { overflow-x: auto; } /* narrow screens scroll the chart sideways instead of shrinking its text */
+.chart svg { width: 100%; min-width: 640px; height: auto; } /* 640 = the viewBox width, so 12px text renders at 12px or larger */
 .chart .grid { stroke: var(--line); }
 .chart text { fill: var(--ink); font-size: 12px; }
 .chart .tick { fill: var(--muted); font-variant-numeric: tabular-nums; }
@@ -180,8 +184,8 @@ pre { overflow: auto; font-family: var(--mono); font-size: var(--fs-sm); }
 @media (prefers-reduced-motion: reduce) { .chart .bar { animation: none; } }
 .chart .axis { fill: var(--muted); font-style: italic; }
 .legend { display: flex; gap: var(--s4); margin: 0 0 var(--s1); }
-.legend i { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; vertical-align: middle; }
-.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: var(--s4); margin: var(--s4) 0; }
+.legend i { display: inline-block; width: .8rem; height: .8rem; border-radius: var(--radius-xs); vertical-align: middle; }
+.charts { display: grid; grid-template-columns: 1fr; gap: var(--s4); margin: var(--s4) 0; } /* one column at every width: the widest page (72rem) is too narrow for two 640px charts side by side */
 @media (max-width: 800px) { .split { grid-template-columns: 1fr; } .decisionbar { position: static; } .decision-actions { margin-left: 0; } .decision-actions .row { justify-content: flex-start; } .preview { height: 24rem; } h1 { font-size: var(--fs-lg); } .toast { left: var(--s4); max-width: none; } }
 
 /* print: invoice detail on paper, without navigation or buttons */
