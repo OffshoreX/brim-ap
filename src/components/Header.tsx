@@ -9,6 +9,7 @@ const ALL: Role[] = ["employee", "ap_clerk", "approver", "finance_manager", "con
 const LINKS: [string, string, Role[]][] = [
   ["/dashboard", "Dashboard", ALL],
   ["/invoices", "Invoices", ALL],
+  ["/upload", "Upload", ["employee", "ap_clerk", "controller_admin"]],
   ["/approvals", "Approvals", ["approver", "finance_manager", "controller_admin"]],
   ["/exceptions", "Exceptions", ["ap_clerk", "finance_manager", "controller_admin"]],
   ["/payments", "Payments", ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],

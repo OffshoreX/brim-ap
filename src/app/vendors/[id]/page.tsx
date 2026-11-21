@@ -2,15 +2,19 @@
 import { useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { Table } from "@/components/ui";
-import { Load, Notice, post } from "@/components/api";
+import type { MeResponse } from "@/contracts";
+import { Load, Notice, post, useApi } from "@/components/api";
 
-type Change = { id: number; changed_at: string; changed_by_user_id: number | null; request_channel: string | null; status: string; old_account_last4: string | null; new_account_last4: string | null; verified_by_user_id: number | null };
+type Change = { id: number; changed_at: string; changed_by_user_id: number | null; request_channel: string | null; status: string; old_account_last4: string | null; new_account_last4: string | null; verified_by_user_id: number | null; verified_by_callback: number; verified_at: string | null };
 type Vendor = { id: number; name: string; category: string | null; status: string | null; address: string | null; province_or_state: string | null; payment_terms_days: number | null; preferred_payment_method: string | null; bank_account_last4: string; bankChanges: Change[] };
 
 // GET /api/vendors/{id}; POST /api/vendors/{id}/bank-change and /bank-change/verify.
 export default function VendorPage() {
   const id = Number(useParams<{ id: string }>().id);
   const [version, setVersion] = useState(0);
+  // Hiding the buttons is for looks only: the verify route allows finance_manager and controller_admin and refuses the requester.
+  const role = useApi<MeResponse>("/api/me").data?.user.role;
+  const canVerify = role === "finance_manager" || role === "controller_admin";
   const [msg, setMsg] = useState<{ ok?: string; error?: string }>({});
 
   async function act(url: string, body: unknown, done: string) {
@@ -38,13 +42,14 @@ export default function VendorPage() {
             </tbody></Table>
             <h2>Bank changes</h2>
             <Table>
-              <thead><tr><th>When</th><th>Channel</th><th>Old</th><th>New</th><th>Status</th><th></th></tr></thead>
+              <thead><tr><th>When</th><th>Channel</th><th>Old</th><th>New</th><th>Status</th><th>Verified</th><th></th></tr></thead>
               <tbody>
                 {v.bankChanges.map((c) => (
                   <tr key={c.id}>
                     <td>{c.changed_at}</td><td>{c.request_channel}</td><td>…{c.old_account_last4}</td><td>…{c.new_account_last4}</td><td>{c.status}</td>
+                    <td>{c.verified_by_callback ? `Yes, by user ${c.verified_by_user_id} on ${c.verified_at}` : c.status === "rejected" ? `Rejected by user ${c.verified_by_user_id}` : "Not verified"}</td>
                     <td>
-                      {c.status === "pending" && (
+                      {canVerify && c.status === "pending" && (
                         <>
                           <button onClick={() => act(`/api/vendors/${id}/bank-change/verify`, { verified: true }, "Change verified and applied")}>Callback confirmed</button>
                           <button onClick={() => act(`/api/vendors/${id}/bank-change/verify`, { verified: false }, "Change rejected")}>Callback failed</button>

@@ -36,6 +36,25 @@ export async function download(url: string, filename: string): Promise<string | 
   URL.revokeObjectURL(a.href);
 }
 
+// Sends one file as multipart. XHR (not fetch) because only XHR tells us when the bytes have gone, so the row can
+// switch from "uploading" to "processing" while the server reads the invoice. Errors reuse failure() like call().
+export function sendFile<T>(file: File, onSent: () => void): Promise<{ data?: T; error?: string }> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/invoices/upload");
+    xhr.upload.onloadend = onSent;
+    xhr.onerror = () => resolve({ error: "Could not reach the server." });
+    xhr.onload = async () => {
+      const res = new Response(xhr.responseText, { status: xhr.status });
+      const error = await failure(res.clone());
+      resolve(error ? { error } : { data: (await res.json().catch(() => null)) as T });
+    };
+    const form = new FormData();
+    form.append("file", file);
+    xhr.send(form);
+  });
+}
+
 export const post = <T,>(url: string, body: unknown) =>
   call<T>(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 

@@ -36,6 +36,8 @@ const DATA: Record<string, unknown> = {
 
 vi.mock("@/components/api", async (orig) => ({
   ...(await orig<typeof import("@/components/api")>()),
+  // Only the vendor page asks for exactly "/api/me" (the header adds ?at=), so the header test still sees "not signed in".
+  useApi: (url: string) => (url === "/api/me" ? { data: { user: { id: 2, name: "Fran", role: "finance_manager" } } } : {}),
   Load: ({ url, children }: { url: string | null; children: (d: unknown, reload: () => void) => ReactNode }) =>
     children(DATA[(url ?? "").split("?")[0]], () => {}),
 }));
@@ -54,7 +56,10 @@ import Vendors from "./vendors/page";
 import VendorDetail from "./vendors/[id]/page";
 import Audit from "./audit/page";
 import Rules from "./admin/approval-rules/page";
-import Inbox from "./inbox/page";
+import Inbox, { tabOf } from "./inbox/page";
+import Upload from "./upload/page";
+import { groupByCode } from "./exceptions/page";
+import { runBatch, type Row } from "@/components/BatchUpload";
 
 const PAGES: [string, () => ReactNode, string][] = [
   ["login", Login, "Priya"],
@@ -68,7 +73,8 @@ const PAGES: [string, () => ReactNode, string][] = [
   ["vendor detail", VendorDetail, "Callback confirmed"],
   ["audit", Audit, "invoice.upload"],
   ["approval rules", Rules, "finance_manager"],
-  ["inbox", Inbox, "Big sale"],
+  ["inbox", Inbox, "Invoice emails"],
+  ["upload", Upload, "Drag invoice files here"],
 ];
 
 test.each(PAGES)("%s page renders its data", (_name, Page, expected) => {
@@ -103,4 +109,49 @@ test("money text becomes integer cents", () => {
   expect(toCents("0.07")).toBe(7);
   expect(toCents("1.234")).toBeNull();
   expect(toCents("-3")).toBeNull();
+});
+
+test("exceptions group by flag code and the severity filter narrows them", () => {
+  const warn = { code: "late_fee", message: "Late fee", severity: "warning" };
+  const items = [
+    { id: 1, invoiceNumber: "A", totalCents: 1, currency: "CAD", flags: [flag, warn] },
+    { id: 2, invoiceNumber: "B", totalCents: 1, currency: "CAD", flags: [flag] },
+  ];
+  expect(groupByCode(items, "").map((g) => [g.code, g.items.length])).toEqual([["tax_mismatch", 2], ["late_fee", 1]]);
+  expect(groupByCode(items, "warning").map((g) => g.code)).toEqual(["late_fee"]);
+  expect(groupByCode(items, "info")).toEqual([]);
+});
+
+test("inbox classes land on the right tab", () => {
+  expect(["invoice", "credit_note", "bank_change", "suspicious", "marketing", "statement"].map(tabOf)).toEqual(
+    ["Invoice emails", "Invoice emails", "Bank-change requests", "Suspicious", "Other", "Other"]);
+});
+
+// Stands in for the browser's XMLHttpRequest: answers by file name, so one bad file can be told apart.
+class FakeXhr {
+  upload = { onloadend: () => {} };
+  onload = () => {}; onerror = () => {};
+  status = 200; responseText = "";
+  open() {}
+  send(form: FormData) {
+    const name = (form.get("file") as File).name;
+    this.upload.onloadend();
+    if (name === "bad.pdf") { this.status = 400; this.responseText = JSON.stringify({ error: "Not a PDF" }); }
+    else if (name === "403.pdf") { this.status = 403; this.responseText = JSON.stringify({ error: "Forbidden" }); }
+    else this.responseText = JSON.stringify({ results: [{ file: name, invoiceId: 5, status: "pending_approval", flags: [], error: null, duplicate: name === "again.pdf" }] });
+    queueMicrotask(() => this.onload());
+  }
+}
+
+test("batch upload: a row per file, a failed file does not stop the others, 403 shows the server message", async () => {
+  vi.stubGlobal("XMLHttpRequest", FakeXhr);
+  const files = ["a.pdf", "bad.pdf", "again.pdf", "403.pdf"].map((n) => new File(["x"], n));
+  const rows: Row[] = files.map((f) => ({ name: f.name, state: "queued" }));
+  const seen: string[] = [];
+  await runBatch(files, (i, patch) => { Object.assign(rows[i], patch); if (patch.state) seen.push(`${i}:${patch.state}`); });
+  expect(rows.map((r) => r.state)).toEqual(["done", "failed", "done", "failed"]);
+  expect(rows[1].error).toBe("Not a PDF");
+  expect(rows[3].error).toBe("Not allowed: Forbidden");
+  expect(rows[2].result?.duplicate).toBe(true);
+  expect(seen).toContain("0:processing");
 });
