@@ -1,3 +1,4 @@
+import { discountCentsFor, parseEarlyPayTerms } from "./paymentTerms";
 import type { ReleasePayment, ReleaseResult, ReleaseTier, ReleaseUser } from "./types";
 
 // Roles that may prepare a payment (P09: AP clerks prepare). Releasing is a separate, stricter check.
@@ -20,14 +21,7 @@ export function canRelease(user: ReleaseUser, payment: ReleasePayment, tiers: re
   return { allowed: true };
 }
 
-const DAY_MS = 86_400_000;
-
-// Vendor terms look like "2/10 net 30": 2% off the subtotal if paid within 10 days of the invoice date.
-// Integer math: percent becomes basis points, result rounds half up. Anything else means no discount.
+// Kept as the one call payments.ts makes; parsing and window maths live in paymentTerms.ts.
 export function earlyPayDiscountCents(terms: string | null, invoiceDate: string, paidDate: string, subtotalCents: number): number {
-  const m = /^(\d+(?:\.\d+)?)\/(\d+) net \d+$/.exec(terms ?? "");
-  if (!m) return 0;
-  const days = (Date.parse(paidDate) - Date.parse(invoiceDate)) / DAY_MS;
-  if (!(days >= 0 && days <= Number(m[2]))) return 0;
-  return Math.round((subtotalCents * Math.round(Number(m[1]) * 100)) / 10_000);
+  return discountCentsFor(parseEarlyPayTerms(terms), invoiceDate, paidDate, subtotalCents);
 }

@@ -261,3 +261,24 @@ test("a vendor that charges no tax is judged by its earlier coding, not flagged 
   expect((await (await run(id)).json()).status).toBe("pending_approval");
   expect(codes(id)).toEqual([]);
 });
+
+test("missing due date is computed from the vendor's terms; an extracted due date is kept", async () => {
+  getDb().prepare("UPDATE vendors SET payment_terms_days = 21 WHERE id = 1").run();
+  ok({ dueDate: null });
+  const a = makeInvoice();
+  await run(a);
+  expect(row(a).due_date).toBe("2026-11-22");
+  ok({ invoiceNumber: "INV-101", dueDate: "2026-12-15" });
+  const b = makeInvoice("b.pdf");
+  await run(b);
+  expect(row(b).due_date).toBe("2026-12-15");
+});
+
+test("unreadable early-pay terms add a visible warning, not an error and not a discount", async () => {
+  getDb().prepare("UPDATE vendors SET early_pay_discount = 'pay fast, save' WHERE id = 1").run();
+  ok();
+  const id = makeInvoice();
+  await run(id);
+  expect(codes(id)).toContain("early_pay_terms_unparsed");
+  expect(row(id).status).toBe("pending_approval");
+});

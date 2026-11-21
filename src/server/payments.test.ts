@@ -154,6 +154,7 @@ test("release: unknown payment 404, bad body 400", async () => {
 });
 
 test("CARD release gets a single-use virtual card reference; two cards differ", async () => {
+  getDb().prepare("UPDATE vendors SET accepts_card_payment=1 WHERE id=1").run();
   addInvoice(8, 100);
   const a = await prepared(1, { method: "CARD" });
   const b = await prepared(8, { method: "CARD" });
@@ -206,4 +207,118 @@ test("cheque list: released cheques only, roles enforced", async () => {
 
 test("formatCents", () => {
   expect([formatCents(0), formatCents(5), formatCents(100), formatCents(12345)]).toEqual(["0.00", "0.05", "1.00", "123.45"]);
+});
+
+// ---- T40: real-dataset behaviour ----
+const fxRow = (date: string, bps: number) => getDb().prepare("INSERT INTO fx_rates (date, usd_to_cad_bps) VALUES (?,?)").run(date, bps);
+
+test("USD: CAD amount uses the invoice-date rate, not the payment date's (dataset PAY-00002-style: 5124.23 x 1.3709 = 7024.81)", async () => {
+  fxRow("2026-01-01", 13709);
+  fxRow("2026-01-05", 13713); // the day it is paid: must be ignored
+  addInvoice(20, 512_423, "approved", { currency: "USD", date: "2026-01-01" });
+  const id = await prepared(20);
+  expect(row(`SELECT amount_cents, currency, fx_rate_to_cad_bps, amount_cad_cents FROM payments WHERE id=${id}`)).toEqual({
+    amount_cents: 512_423, currency: "USD", fx_rate_to_cad_bps: 13709, amount_cad_cents: 702_481,
+  });
+  releasePayment(asUser(2), id, "2026-01-05");
+  expect(row(`SELECT amount_cents, amount_cad_cents FROM payments WHERE id=${id}`)).toEqual({ amount_cents: 512_423, amount_cad_cents: 702_481 });
+});
+
+test("USD: rounds half up to a whole cent (100.01 x 1.3705 = 137.0637 -> 137.06; 0.03 x 1.5 = 0.045 -> 0.05)", async () => {
+  fxRow("2026-01-02", 13705);
+  fxRow("2026-01-03", 15000);
+  addInvoice(21, 10_001, "approved", { currency: "USD", date: "2026-01-02" });
+  addInvoice(22, 3, "approved", { currency: "USD", date: "2026-01-03" });
+  const a = await prepared(21);
+  const b = await prepared(22);
+  expect(row(`SELECT amount_cad_cents AS c FROM payments WHERE id=${a}`)).toEqual({ c: 13_706 });
+  expect(row(`SELECT amount_cad_cents AS c FROM payments WHERE id=${b}`)).toEqual({ c: 5 });
+});
+
+test("USD with a discount: the CAD amount follows the net amount paid", async () => {
+  fxRow("2026-01-05", 13500);
+  getDb().prepare("UPDATE vendors SET early_pay_discount='2/10 net 30' WHERE id=1").run();
+  addInvoice(23, 102_000, "approved", { currency: "USD", date: "2026-01-05", subtotal: 100_000 }); // discount 2% of 1000.00 = 20.00
+  const id = await prepared(23);
+  expect(releasePayment(asUser(2), id, "2026-01-10").discountCents).toBe(2000);
+  // paid = 1020.00 - 20.00 = 1000.00 USD, x 1.35 = 1350.00 CAD
+  expect(row(`SELECT amount_cents, amount_cad_cents, discount_taken_cents FROM payments WHERE id=${id}`)).toEqual({ amount_cents: 100_000, amount_cad_cents: 135_000, discount_taken_cents: 2000 });
+});
+
+test("USD with no rate for the invoice date is refused, never guessed", async () => {
+  addInvoice(24, 1000, "approved", { currency: "USD", date: "2026-03-01" });
+  expect((await prep(5, { invoiceId: 24 })).status).toBe(409);
+});
+
+test("method: CARD only when the vendor accepts card", async () => {
+  expect((await prep(5, { invoiceId: 1, method: "CARD" })).status).toBe(409); // fixture vendor does not accept card
+  expect(count("SELECT COUNT(*) n FROM payments")).toBe(0);
+  getDb().prepare("UPDATE vendors SET preferred_payment_method='CARD', accepts_card_payment=1 WHERE id=1").run();
+  expect(((await (await prep(5, { invoiceId: 1 })).json()) as { method: string }).method).toBe("CARD");
+});
+
+test("method: a vendor that prefers CARD but does not accept it falls back to EFT with a note", async () => {
+  getDb().prepare("UPDATE vendors SET preferred_payment_method='CARD', accepts_card_payment=0 WHERE id=1").run();
+  const body = (await (await prep(5, { invoiceId: 1 })).json()) as { method: string; notes: string[] };
+  expect(body.method).toBe("EFT");
+  expect(body.notes.join(" ")).toMatch(/does not accept card/);
+});
+
+test("method: a vendor that accepts card but prefers EFT or CHEQUE keeps its preference", async () => {
+  getDb().prepare("UPDATE vendors SET preferred_payment_method='CHEQUE', accepts_card_payment=1 WHERE id=1").run();
+  expect(((await (await prep(5, { invoiceId: 1 })).json()) as { method: string }).method).toBe("CHEQUE");
+});
+
+test("schedule: proposes the discount deadline only while the window is open, otherwise the due date", async () => {
+  const dayOffset = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+  getDb().prepare("UPDATE vendors SET early_pay_discount='2/10 net 30', payment_terms_days=30 WHERE id=1").run();
+  addInvoice(30, 10_000, "approved", { date: dayOffset(-2) }); // window open until 8 days from now
+  addInvoice(31, 10_000, "approved", { date: dayOffset(-20) }); // window closed
+  const open = (await (await prep(5, { invoiceId: 30 })).json()) as { scheduledDate: string; earlyPay: boolean };
+  const closed = (await (await prep(5, { invoiceId: 31 })).json()) as { scheduledDate: string; earlyPay: boolean };
+  expect(open).toMatchObject({ scheduledDate: dayOffset(8), earlyPay: true });
+  expect(closed).toMatchObject({ scheduledDate: dayOffset(10), earlyPay: false }); // invoice date + 30 days, computed from terms
+});
+
+test("schedule: an explicit date from the clerk is kept and is not called early pay", async () => {
+  getDb().prepare("UPDATE vendors SET early_pay_discount='2/10 net 30' WHERE id=1").run();
+  const body = (await (await prep(5, { invoiceId: 1, scheduledDate: "2026-02-01" })).json()) as { scheduledDate: string; earlyPay: boolean };
+  expect(body).toMatchObject({ scheduledDate: "2026-02-01", earlyPay: false });
+});
+
+test("unparseable discount terms: no discount, a visible note", async () => {
+  getDb().prepare("UPDATE vendors SET early_pay_discount='2 percent if quick' WHERE id=1").run();
+  addInvoice(32, 10_000, "approved", { date: new Date().toISOString().slice(0, 10), subtotal: 10_000 });
+  const res = (await (await prep(5, { invoiceId: 32 })).json()) as { paymentId: number; notes: string[] };
+  expect(res.notes.join(" ")).toMatch(/2 percent if quick/);
+  expect(releasePayment(asUser(2), res.paymentId).discountCents).toBe(0);
+});
+
+test("EFT file: only released EFT rows, USD shows the USD amount net of discount, imported reference is kept", async () => {
+  fxRow("2026-01-05", 13500);
+  getDb().prepare("UPDATE vendors SET early_pay_discount='2/10 net 30', accepts_card_payment=1 WHERE id=1").run();
+  addInvoice(40, 102_000, "approved", { currency: "USD", date: "2026-01-05", subtotal: 100_000 });
+  addInvoice(41, 500);
+  addInvoice(42, 600);
+  const usd = await prepared(40, { method: "EFT" });
+  const card = await prepared(41, { method: "CARD" });
+  await prepared(42, { method: "EFT" }); // stays scheduled: not in the file
+  releasePayment(asUser(2), usd, "2026-01-10");
+  releasePayment(asUser(2), card, "2026-01-10");
+  getDb().prepare("UPDATE payments SET reference='BRIM-EFT-123' WHERE id=?").run(usd);
+  const res = await eft(new Request("http://x", { headers: { cookie: `session=${signSession(3)}` } }));
+  expect(await res.text()).toBe('invoice_number,vendor,bank_details,amount,currency,reference\nINV-40,"Acme, Inc",123-456,1000.00,USD,BRIM-EFT-123\n');
+});
+
+test("cheque list: scheduled, EFT and CARD rows never appear", async () => {
+  getDb().prepare("UPDATE vendors SET accepts_card_payment=1 WHERE id=1").run();
+  addInvoice(50, 100);
+  addInvoice(51, 200);
+  addInvoice(52, 300);
+  await prepared(50, { method: "CHEQUE" }); // scheduled only, not released
+  const eftId = await prepared(51, { method: "EFT" });
+  const cardId = await prepared(52, { method: "CARD" });
+  for (const id of [eftId, cardId]) releasePayment(asUser(2), id);
+  const res = await cheques(new Request("http://x", { headers: { cookie: `session=${signSession(3)}` } }));
+  expect((await res.json()).cheques).toEqual([]);
 });
