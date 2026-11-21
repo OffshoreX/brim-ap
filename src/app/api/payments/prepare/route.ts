@@ -1,4 +1,5 @@
 import { handle, requireRole } from "@/server/authz";
+import { IdempotencyError } from "@/server/idempotency";
 import { METHODS, PaymentError, preparePayment, type Method } from "@/server/payments";
 
 export const POST = (request: Request) =>
@@ -11,9 +12,10 @@ export const POST = (request: Request) =>
     if (scheduledDate !== undefined && !(typeof scheduledDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)))
       return Response.json({ error: "scheduledDate must be YYYY-MM-DD" }, { status: 400 });
     try {
-      return Response.json(preparePayment(user, { invoiceId, method: method as Method | undefined, scheduledDate }));
+      return Response.json(preparePayment(user, { invoiceId, method: method as Method | undefined, scheduledDate }, request.headers.get("idempotency-key")));
     } catch (e) {
       if (e instanceof PaymentError) return Response.json({ error: e.message }, { status: e.status });
+      if (e instanceof IdempotencyError) return Response.json({ error: e.message }, { status: e.status });
       throw e;
     }
   });

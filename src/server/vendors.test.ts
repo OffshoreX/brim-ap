@@ -67,7 +67,7 @@ test("a different finance_manager verifies: master changes only now; audit rows 
   expect(getDb().prepare("SELECT status, verified_by_callback v, verified_by_user_id u FROM vendor_bank_changes").get()).toEqual({ status: "applied", v: 1, u: FIN2 });
   expect(audits("vendor.bank_change_verified")).toBe(1);
   expect(audits("vendor.bank_updated")).toBe(1);
-  expect((await verify(req(CTRL, { verified: true }), ctx())).status).toBe(404); // nothing pending any more
+  expect((await verify(req(CTRL, { verified: true }), ctx())).status).toBe(409); // nothing pending any more: already decided, so 409 (T57)
 });
 
 test("verified=false rejects and leaves the master alone; bad inputs 400; second pending 409", async () => {

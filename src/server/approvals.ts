@@ -74,7 +74,8 @@ export function createChain(invoiceId: number, actorId: number | null): ChainSte
 
 type StepRow = { step_no: number; role: string; user_id: number; delegated_from_id: number | null; status: string };
 
-// The check, the approvals row, the step, the status change and the audit rows are one transaction.
+// The check, the approvals row, the step, the status change and the audit rows are one IMMEDIATE transaction, so the status is
+// re-read under the write lock: a second approve, or an approve after a reject, finds the invoice moved and gets 409.
 export function decideInvoice(user: User, invoiceId: number, decision: Decision, comment: string): DecisionResponse {
   const db = getDb();
   return db.transaction(() => {
@@ -92,7 +93,11 @@ export function decideInvoice(user: User, invoiceId: number, decision: Decision,
     const pending = steps.filter((s) => s.status === "pending");
     if (!pending.length) throw new ApprovalError(409, "Invoice has no pending approval step");
     const step = pending[0];
-    if (step.user_id !== user.id) throw new ApprovalError(403, "You are not the next approver for this invoice");
+    if (step.user_id !== user.id) {
+      // Someone who already decided a step and clicks again is a repeat (409), not a stranger (403).
+      if (db.prepare("SELECT 1 FROM approvals WHERE invoice_id = ? AND approver_id = ?").get(invoiceId, user.id)) throw new ApprovalError(409, "You already decided this invoice");
+      throw new ApprovalError(403, "You are not the next approver for this invoice");
+    }
 
     const delegated = step.delegated_from_id !== null;
     const info = db
@@ -122,5 +127,5 @@ export function decideInvoice(user: User, invoiceId: number, decision: Decision,
       delegated,
       delegatedFromId: step.delegated_from_id,
     };
-  })();
+  }).immediate();
 }

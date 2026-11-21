@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { User } from "@/contracts";
 import { writeAudit } from "./audit";
 import { getDb } from "./db";
+import { idempotentSync } from "./idempotency";
 import { convertCents } from "./rules/fx";
 import { chooseMethod, discountCentsFor, dueDateFor, parseEarlyPayTerms, proposedPayDate } from "./rules/paymentTerms";
 import { canRelease } from "./rules/release";
@@ -50,7 +51,12 @@ function rateBps(db: ReturnType<typeof getDb>, currency: string, stored: number 
 }
 
 // Step 1: a clerk (or above) schedules an approved invoice. No money moves yet.
-export function preparePayment(user: User, input: { invoiceId: number; method?: Method; scheduledDate?: string }): PrepareResponse {
+// The same Idempotency-Key replays the first response; without a key a second prepare is refused with 409 (the invoice is already scheduled).
+export function preparePayment(user: User, input: { invoiceId: number; method?: Method; scheduledDate?: string }, key?: string | null): PrepareResponse {
+  return idempotentSync(user.id, "payment.prepare", key, input, () => prepareOnce(user, input));
+}
+
+function prepareOnce(user: User, input: { invoiceId: number; method?: Method; scheduledDate?: string }): PrepareResponse {
   const db = getDb();
   // One transaction: payment row, status change and audit rows all succeed or all roll back.
   return db.transaction(() => {
@@ -99,7 +105,13 @@ export function preparePayment(user: User, input: { invoiceId: number; method?: 
 }
 
 // Step 2: a different, senior-enough user pays it. The route checked the role; canRelease checks size and separation of duties.
-export function releasePayment(user: User, paymentId: number, now: string = today()): ReleaseResponse {
+// Two releases at once (or the same one twice) cannot both pass: the idempotency wrapper holds the write lock, the status is
+// re-read inside it, and the second caller sees 'settled' and gets 409. The same Idempotency-Key replays the first response.
+export function releasePayment(user: User, paymentId: number, now: string = today(), key?: string | null): ReleaseResponse {
+  return idempotentSync(user.id, "payment.release", key, { paymentId }, () => releaseOnce(user, paymentId, now));
+}
+
+function releaseOnce(user: User, paymentId: number, now: string): ReleaseResponse {
   const db = getDb();
   return db.transaction(() => {
     const pay = db

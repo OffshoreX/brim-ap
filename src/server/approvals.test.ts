@@ -82,7 +82,7 @@ test("exactly 10,000 needs one approval; over 10,000 needs two, in order", async
   const first = await (await ok(4, two)).json();
   expect(first).toMatchObject({ status: "pending_approval", stepNo: 1, nextApproverId: 3 });
   expect(status(two)).toBe("pending_approval");
-  expect((await ok(4, two)).status).toBe(403); // step 1 is done; only step 2's user may act now
+  expect((await ok(4, two)).status).toBe(409); // step 1 is done and user 4 already decided it: a repeat is 409 (T57)
   expect(await (await ok(3, two)).json()).toMatchObject({ status: "approved", stepNo: 2, nextApproverId: null });
   expect(status(two)).toBe("approved");
   expect(getDb().prepare("SELECT step_no, approver_id, approver_role, decision FROM approvals WHERE invoice_id=? ORDER BY step_no").all(two)).toEqual([
