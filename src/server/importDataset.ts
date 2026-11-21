@@ -9,6 +9,11 @@ type Row = Record<string, string>;
 
 // Minimal RFC 4180 reader (quoted fields, "" escapes, CRLF). Avoids a new dependency.
 export function parseCsv(text: string): Row[] {
+  return csvTable(text).rows;
+}
+
+// Same reader, but keeps the header so a file with no data rows can still be checked for its columns.
+export function csvTable(text: string): { header: string[]; rows: Row[] } {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
@@ -28,7 +33,7 @@ export function parseCsv(text: string): Row[] {
   }
   if (field !== "" || row.length) { row.push(field); rows.push(row); }
   const [header, ...body] = rows.filter((r) => r.length > 1 || r[0] !== "");
-  return body.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""])));
+  return { header: header ?? [], rows: body.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""]))) };
 }
 
 // "2520.00" -> 252000 with string math only, so no float ever touches money. scale 2 = cents, 4 = FX rate x10000.
@@ -39,7 +44,12 @@ export function decimalToInt(s: string, scale = 2): number | null {
   return Number(m[1] + m[2] + (m[3] ?? "").padEnd(scale, "0"));
 }
 
-const num = (s: string) => (s === "" ? null : Number(s.match(/(\d+)$/)![1])); // "AP-00012" -> 12, "PO-2026-0007" -> 7
+const num = (s: string) => { // "AP-00012" -> 12, "PO-2026-0007" -> 7
+  if (s === "") return null;
+  const m = /(\d+)$/.exec(s);
+  if (!m) throw new Error(`"${s}" does not end in a number`);
+  return Number(m[1]);
+};
 const txt = (s: string) => (s === "" ? null : s);
 const cents = (s: string) => decimalToInt(s, 2);
 const yesNo = (s: string) => (s === "" ? null : s === "yes" ? 1 : 0);
@@ -131,7 +141,105 @@ function specs(ctx: { deptName: Map<string, string> }): Spec[] {
 
 export type ImportSummary = Record<string, number>;
 
+// Everything wrong with a folder, as plain sentences. Thrown before the first write so a bad folder changes nothing.
+export class DatasetError extends Error {
+  constructor(public problems: string[]) { super(problems.join("\n")); }
+}
+
+// The CSV columns each file must have = the columns the importer reads. A probe row that answers "" to every
+// question records them, so this list can never drift from the loader (and the demo-data generator reuses it).
+export function requiredColumns(): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const s of specs({ deptName: new Map() })) {
+    const seen = new Set<string>();
+    const probe = new Proxy({}, { get: (_, k) => (seen.add(String(k)), "") }) as Row;
+    for (const f of Object.values(s.cols)) f(probe);
+    out[s.file] = [...seen];
+  }
+  return out;
+}
+
+// The column(s) that identify a row; two rows with the same value would silently overwrite each other.
+const KEYS: Record<string, string[]> = {
+  "departments.csv": ["department_id"], "users.csv": ["user_id"], "vendors.csv": ["vendor_id"], "bank_change_history.csv": ["change_id"],
+  "contracts.csv": ["contract_id"], "purchase_orders.csv": ["po_id"], "gl_accounts.csv": ["account_number"], "tax_codes.csv": ["code"],
+  "invoices.csv": ["invoice_id"], "invoice_lines.csv": ["invoice_id", "line_no"], "approvals.csv": ["approval_id"], "payments.csv": ["payment_id"],
+  "card_transactions.csv": ["txn_id"], "bank_statement.csv": ["bank_txn_id"], "fx_rates.csv": ["date"], "approval_policies.csv": ["rule_id"],
+};
+// [file, column, file that must contain that id]: a dangling reference is reported with its row, not as a bare database error.
+const REFS: [string, string, string][] = [
+  ["users.csv", "department_id", "departments.csv"], ["invoices.csv", "vendor_id", "vendors.csv"], ["invoice_lines.csv", "invoice_id", "invoices.csv"],
+  ["approvals.csv", "invoice_id", "invoices.csv"], ["payments.csv", "invoice_id", "invoices.csv"],
+];
+const isDateColumn = (c: string) => /(_date|_at)$|^date$/.test(c);
+function isRealDate(v: string) { // 2026-02-30 matches the pattern but is not a day, so round-trip it
+  const m = /^(\d{4})-(\d{2})-(\d{2})(T\d{2}:\d{2}(:\d{2})?)?$/.exec(v);
+  if (!m) return false;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
+}
+
+// Checks the data/ folder: files, columns, unique ids, references, dates, money. Row 1 is the header, like in a spreadsheet.
+export function validateDataset(dir: string): string[] {
+  const problems: string[] = [];
+  const required = requiredColumns();
+  const ids = new Map<string, Set<string>>(); // file -> first key column values, for the reference check
+  const loaded: { file: string; rows: Row[]; header: string[] }[] = [];
+  for (const s of specs({ deptName: new Map() })) {
+    const p = path.join(dir, s.file);
+    if (!fs.existsSync(p)) { problems.push(`${s.file} is missing from the data folder.`); continue; }
+    const { header, rows } = csvTable(fs.readFileSync(p, "utf8"));
+    const missing = required[s.file].filter((c) => !header.includes(c));
+    if (missing.length) { problems.push(`${s.file} has no column named ${missing.map((c) => `"${c}"`).join(", ")}.`); continue; }
+    loaded.push({ file: s.file, rows, header });
+    const seen = new Map<string, number>();
+    const keyCol = KEYS[s.file];
+    rows.forEach((r, i) => {
+      const row = i + 2;
+      const key = keyCol.map((c) => r[c]).join("/");
+      if (keyCol.some((c) => r[c] === "")) problems.push(`${s.file} row ${row}: ${keyCol.join(" + ")} is empty.`);
+      else if (seen.has(key)) problems.push(`${s.file} row ${row}: ${keyCol.join(" + ")} "${key}" was already used on row ${seen.get(key)}.`);
+      else seen.set(key, row);
+      for (const c of header) if (isDateColumn(c) && r[c] !== "" && !isRealDate(r[c])) problems.push(`${s.file} row ${row}: ${c} "${r[c]}" is not a valid date (use YYYY-MM-DD).`);
+      for (const [col, f] of Object.entries(s.cols)) {
+        try { f(r); } catch (e) { problems.push(`${s.file} row ${row}: could not read ${col} (${(e as Error).message}).`); }
+      }
+    });
+    ids.set(s.file, new Set(rows.map((r) => r[keyCol[0]])));
+  }
+  for (const [file, col, parent] of REFS) {
+    const known = ids.get(parent);
+    const l = loaded.find((x) => x.file === file);
+    if (!known || !l) continue; // the missing file was already reported
+    l.rows.forEach((r, i) => { if (r[col] !== "" && !known.has(r[col])) problems.push(`${file} row ${i + 2}: ${col} "${r[col]}" is not in ${parent}.`); });
+  }
+  return problems;
+}
+
+// Checks the whole folder: data/ plus the optional inbox/emails.json and the invoice files its emails point at.
+export function validateFolder(root: string): string[] {
+  const problems = validateDataset(path.join(root, "data"));
+  const emailsFile = path.join(root, "inbox", "emails.json");
+  if (!fs.existsSync(emailsFile)) return problems;
+  let emails: unknown;
+  try { emails = JSON.parse(fs.readFileSync(emailsFile, "utf8")); } catch { return [...problems, "inbox/emails.json is not valid JSON."]; }
+  if (!Array.isArray(emails)) return [...problems, "inbox/emails.json must be a list of emails."];
+  const seen = new Set<string>();
+  emails.forEach((e, i) => {
+    const where = `inbox/emails.json email ${i + 1}`;
+    if (typeof e?.email_id !== "string" || !Array.isArray(e.attachments) || typeof e.from_address !== "string" || typeof e.subject !== "string" || typeof e.body !== "string")
+      return problems.push(`${where}: needs email_id, from_address, subject, body and an attachments list.`);
+    if (seen.has(e.email_id)) problems.push(`${where}: email_id "${e.email_id}" is used twice.`);
+    seen.add(e.email_id);
+    for (const a of e.attachments as string[])
+      if (!fs.existsSync(path.join(root, "incoming_invoices", path.basename(a)))) problems.push(`${where}: attachment "${a}" is not in incoming_invoices/.`);
+  });
+  return problems;
+}
+
 export function importDataset(db: Database.Database, dir = path.join(process.cwd(), "brim_ap_dataset", "data")): ImportSummary {
+  const problems = validateDataset(dir);
+  if (problems.length) throw new DatasetError(problems);
   const read = (f: string) => parseCsv(fs.readFileSync(path.join(dir, f), "utf8"));
   const deptName = new Map(read("departments.csv").map((r) => [r.department_id, r.name]));
   const invoiceCurrency = new Map(read("invoices.csv").map((r) => [r.invoice_id, r.currency]));
@@ -146,11 +254,12 @@ export function importDataset(db: Database.Database, dir = path.join(process.cwd
       const stmt = db.prepare(
         `INSERT INTO ${s.table} (${names.join(",")}) VALUES (${names.map((n) => "@" + n).join(",")}) ON CONFLICT(${s.key}) DO UPDATE SET ${update}`
       );
-      for (const r of read(s.file)) {
+      read(s.file).forEach((r, i) => {
         const values = Object.fromEntries(names.map((n) => [n, s.cols[n](r)]));
         if (s.table === "invoice_lines") values.currency = invoiceCurrency.get(r.invoice_id)!; // a line is in its invoice's currency
-        stmt.run(values);
-      }
+        // A value the database refuses (e.g. an unknown role) aborts the whole transaction, so nothing is half-loaded.
+        try { stmt.run(values); } catch (e) { throw new DatasetError([`${s.file} row ${i + 2}: the database refused it (${(e as Error).message}).`]); }
+      });
     }
     const summary = counts(db);
     // Bulk load is a state change too: one append-only audit row per run with the resulting counts.
