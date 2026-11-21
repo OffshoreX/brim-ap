@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { INVOICE_STATUSES } from "@/contracts";
+import { Empty, StatusBadge, Table } from "@/components/ui";
 import { call, Load, money } from "@/components/api";
 
 type Item = { id: number; status: string; vendorId: number | null; invoiceNumber: string; invoiceDate: string; totalCents: number; currency: string };
@@ -46,20 +47,23 @@ export default function InvoicesPage() {
         </select>
       </label>
       <Load<Item[]> url={`/api/invoices?v=${version}`}>
-        {(items) => (
-          <table>
+        {(all) => {
+          const items = all.filter((i) => !status || i.status === status);
+          return items.length === 0 ? <Empty>No invoices match. Upload a file above to start.</Empty> : (
+          <Table>
             <thead><tr><th>#</th><th>Invoice no.</th><th>Date</th><th>Status</th><th className="num">Total</th></tr></thead>
             <tbody>
-              {items.filter((i) => !status || i.status === status).map((i) => (
+              {items.map((i) => (
                 <tr key={i.id}>
                   <td><Link href={`/invoices/${i.id}`}>{i.id}</Link></td>
-                  <td>{i.invoiceNumber || "(not read yet)"}</td><td>{i.invoiceDate}</td><td>{i.status}</td>
+                  <td>{i.invoiceNumber || "(not read yet)"}</td><td>{i.invoiceDate}</td><td><StatusBadge status={i.status} /></td>
                   <td className="num">{money(i.totalCents, i.currency)}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
-        )}
+          </Table>
+          );
+        }}
       </Load>
     </main>
   );

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { SeverityChip } from "./ui";
 
 // The UI never decides who may do what: every call goes to the server, which answers 401 or 403.
 // This file only turns those answers into a clear message.
@@ -56,8 +57,8 @@ export function useApi<T>(url: string | null) {
 // Shows loading or the error message, otherwise hands the data to the page.
 export function Load<T>({ url, children }: { url: string | null; children: (data: T, reload: () => void) => ReactNode }) {
   const { data, error, reload } = useApi<T>(url);
-  if (error) return <p role="alert" className="error">{error}</p>;
-  if (data === undefined) return <p>Loading…</p>;
+  if (error) return <p role="alert" className="error-box">{error}</p>; // 401 and 403 text comes from failure()
+  if (data === undefined) return <p className="loading" role="status">Loading…</p>;
   return <>{children(data, reload)}</>;
 }
 
@@ -76,12 +77,12 @@ export function Notice({ ok, error }: { ok?: string; error?: string }) {
 // Backend flags are {code, message, severity} objects.
 export type Flag = { code: string; message: string; severity?: string };
 export function Flags({ flags }: { flags: Flag[] }) {
-  if (flags.length === 0) return <p>No flags.</p>;
+  if (flags.length === 0) return <p className="empty">No flags. Every check passed.</p>;
   return (
-    <ul>
+    <ul className="flags">
       {flags.map((f, i) => (
-        <li key={i} className={f.severity === "error" ? "error" : ""}>
-          <code>{f.code}</code> {f.message}
+        <li key={i}>
+          <SeverityChip severity={f.severity} /> <code>{f.code}</code> {f.message}
         </li>
       ))}
     </ul>

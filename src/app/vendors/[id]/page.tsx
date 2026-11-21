@@ -1,6 +1,7 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
+import { Table } from "@/components/ui";
 import { Load, Notice, post } from "@/components/api";
 
 type Change = { id: number; changed_at: string; changed_by_user_id: number | null; request_channel: string | null; status: string; old_account_last4: string | null; new_account_last4: string | null; verified_by_user_id: number | null };
@@ -29,14 +30,14 @@ export default function VendorPage() {
       <Load<Vendor> url={`/api/vendors/${id}?v=${version}`}>
         {(v) => (
           <>
-            <table><tbody>
+            <Table><tbody>
               <tr><th>Name</th><td>{v.name}</td></tr><tr><th>Category</th><td>{v.category}</td></tr><tr><th>Status</th><td>{v.status}</td></tr>
               <tr><th>Address</th><td>{v.address}</td></tr><tr><th>Province</th><td>{v.province_or_state}</td></tr>
               <tr><th>Terms (days)</th><td>{v.payment_terms_days}</td></tr><tr><th>Preferred method</th><td>{v.preferred_payment_method}</td></tr>
               <tr><th>Bank account</th><td>…{v.bank_account_last4}</td></tr>
-            </tbody></table>
+            </tbody></Table>
             <h2>Bank changes</h2>
-            <table>
+            <Table>
               <thead><tr><th>When</th><th>Channel</th><th>Old</th><th>New</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 {v.bankChanges.map((c) => (
@@ -53,7 +54,7 @@ export default function VendorPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </>
         )}
       </Load>

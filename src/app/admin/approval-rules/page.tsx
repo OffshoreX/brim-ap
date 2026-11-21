@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Empty, Table } from "@/components/ui";
 import { Load, money, Notice, toCents, call } from "@/components/api";
 
 type Rule = { id: number; policy_id: string | null; over_cents: number; extra_role: string };
@@ -33,11 +34,11 @@ export default function ApprovalRulesPage() {
       <h1>Approval rules</h1>
       <p>An invoice over the amount gets an extra approval step by that role.</p>
       <Load<{ rules: Rule[] }> url="/api/admin/approval-rules">
-        {({ rules }, reload) => (
-          <table>
+        {({ rules }, reload) => rules.length === 0 ? <Empty>No approval rules are set.</Empty> : (
+          <Table>
             <thead><tr><th>Policy</th><th>Extra approver</th><th className="num">Over (CAD)</th><th>Change to (dollars)</th></tr></thead>
             <tbody>{rules.map((r) => <RuleRow key={r.id} rule={r} saved={reload} />)}</tbody>
-          </table>
+          </Table>
         )}
       </Load>
     </main>

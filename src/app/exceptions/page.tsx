@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
+import { Table } from "@/components/ui";
 import { Flags, Load, money, Notice, post, type Flag } from "@/components/api";
 
 type Item = { id: number; invoiceNumber: string; totalCents: number; currency: string; flags: Flag[] };
@@ -35,11 +36,11 @@ export default function ExceptionsPage() {
       <h1>Exceptions</h1>
       <Load<Item[]> url="/api/exceptions">
         {(items, reload) =>
-          items.length === 0 ? <p>No invoices need review.</p> : (
-            <table>
+          items.length === 0 ? <p>Nothing needs review right now.</p> : (
+            <Table>
               <thead><tr><th>Invoice</th><th className="num">Total</th><th>Why flagged</th><th>Resolve</th></tr></thead>
               <tbody>{items.map((i) => <ExceptionRow key={i.id} item={i} done={reload} />)}</tbody>
-            </table>
+            </Table>
           )
         }
       </Load>
