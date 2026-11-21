@@ -1,8 +1,10 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { FlagBox, Load, money, post, topFlag, type Flag } from "@/components/api";
 import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
+import { CAN_CLERK, CAN_DECIDE, CAN_RELEASE, useCan, useCurrentUser } from "@/components/CurrentUser";
 import { Empty, SeverityChip, StatusBadge, Table, stamp, ymd } from "@/components/ui";
 
 type Line = { lineNo: number; description: string; quantity: number; unitPriceCents: number; amountCents: number; currency: string; taxCents: number | null; glCode: string | null };
@@ -21,6 +23,9 @@ export default function InvoicePage() {
   const [version, setVersion] = useState(0);
   const [comment, setComment] = useState("");
   const a = useActions(() => setVersion((v) => v + 1));
+  // Hiding is for looks; the server decides (requireRole on each route). A role that can never use a button sees one line instead.
+  const { role } = useCurrentUser();
+  const [canDecide, canPrepare, canRelease] = [useCan(CAN_DECIDE), useCan(CAN_CLERK), useCan(CAN_RELEASE)];
   const idem = (key: string) => ({ "idempotency-key": key });
   const decide = (decision: "approved" | "rejected", text: string) => () => post(`/api/invoices/${id}/decision`, { decision, comment: text });
 
@@ -48,7 +53,8 @@ export default function InvoicePage() {
               </div>
               <div className="decision-actions">
                 <div className="row">
-                  {d.status === "pending_approval" && (
+                  {d.status === "pending_approval" && role && !canDecide && <p className="muted">Only approvers, finance managers and controllers can approve or reject this.</p>}
+                  {d.status === "pending_approval" && canDecide && (
                     <>
                       <input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Comment (optional)" aria-label="Approval comment" />
                       <ActionButton icon="approved" label="Approve" busyLabel="Approving…" ariaLabel={`Approve invoice ${d.invoiceNumber || id} from ${payee}`} busy={a.busyKey === "approve"} locked={a.locked}
@@ -59,11 +65,19 @@ export default function InvoicePage() {
                         onConfirm={(reason) => a.run("reject", decide("rejected", reason), "Invoice rejected")} />
                     </>
                   )}
-                  {d.status === "approved" && (
+                  {d.status === "approved" && role && !canPrepare && <p className="muted">Only AP clerks, finance managers and controllers can prepare a payment.</p>}
+                  {d.status === "approved" && canPrepare && (
                     <ActionButton icon="paid" label="Prepare payment" busyLabel="Preparing…" ariaLabel={`Prepare payment for invoice ${d.invoiceNumber || id} from ${payee}`} busy={a.busyKey === "prepare"} locked={a.locked}
                       onClick={() => a.run("prepare", () => post("/api/payments/prepare", { invoiceId: id }, idem(crypto.randomUUID())), "Payment prepared")} />
                   )}
-                  {d.payments.filter((p) => p.status === "scheduled").map((p) => {
+                  {d.status === "needs_review" && (
+                    <p>
+                      {canPrepare && <Link href="/exceptions">Resolve in Exceptions</Link>}{" "}
+                      <span className="muted">AP clerks, finance managers and controllers can resolve this.</span>
+                    </p>
+                  )}
+                  {role && !canRelease && d.payments.some((p) => p.status === "scheduled") && <p className="muted">Only finance managers and controllers can release a payment.</p>}
+                  {canRelease && d.payments.filter((p) => p.status === "scheduled").map((p) => {
                     const amount = money(p.amountCents, p.currency);
                     return (
                       <ConfirmAction key={p.id} icon="paid" label={`Release payment ${p.id}`} busyLabel="Releasing…" ariaLabel={`Release payment ${p.id} to ${payee}`} busy={a.busyKey === `release-${p.id}`} locked={a.locked}

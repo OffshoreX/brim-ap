@@ -40,13 +40,13 @@ const DATA: Record<string, unknown> = {
 
 vi.mock("@/components/api", async (orig) => ({
   ...(await orig<typeof import("@/components/api")>()),
-  // Only the vendor page asks for exactly "/api/me" (the header adds ?at=), so the header test still sees "not signed in".
-  useApi: (url: string) => (url === "/api/me" ? { data: { user: { id: 2, name: "Fran", role: "finance_manager" } } } : {}),
+  useApi: () => ({}),
   Load: ({ url, children }: { url: string | null; children: (d: unknown, reload: () => void) => ReactNode }) =>
     children(DATA[(url ?? "").split("?")[0]], () => {}),
 }));
 vi.mock("next/navigation", () => ({ useParams: () => ({ id: "1" }), usePathname: () => "/dashboard", useRouter: () => ({ push: () => {} }) }));
 
+import { asRole } from "@/components/asRole";
 import Header from "@/components/Header";
 import { call, toCents } from "@/components/api";
 import Login from "./login/page";
@@ -86,7 +86,7 @@ const PAGES: [string, () => ReactNode, string][] = [
 ];
 
 test.each(PAGES)("%s page renders its data", (_name, Page, expected) => {
-  expect(renderToString(<Page />)).toContain(expected);
+  expect(renderToString(asRole("finance_manager", <Page />))).toContain(expected);
 });
 
 test("header shows only a sign-in prompt before /api/me answers (links appear once the role is known)", () => {

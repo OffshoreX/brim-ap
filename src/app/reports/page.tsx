@@ -1,7 +1,6 @@
 "use client";
-import type { MeResponse } from "@/contracts";
 import { Skeleton } from "@/components/ui";
-import { useApi } from "@/components/api";
+import { useCurrentUser } from "@/components/CurrentUser";
 import { ReportSection } from "@/components/Charts";
 import { AgingPanel, DiscountsPanel, REPORT_ROLES, SpendPanel } from "@/components/ReportCharts";
 
@@ -9,13 +8,13 @@ const csv = (path: string, filename: string) => ({ href: `/api/reports/${path}${
 
 // GET /api/reports/aging, /spend?by=vendor|department|month, /discounts. All amounts are CAD cents from SQL aggregates.
 export default function ReportsPage() {
-  const { data, error } = useApi<MeResponse>("/api/me");
+  const { role, error } = useCurrentUser();
   return (
     <main id="main">
       <h1>Reports</h1>
       {error ? <p role="alert" className="error-box">{error}</p>
-        : !data ? <Skeleton />
-        : !REPORT_ROLES.includes(data.user.role) ? <p role="alert" className="error-box">Not allowed: reports are for finance managers, controllers and auditors.</p>
+        : !role ? <Skeleton />
+        : !REPORT_ROLES.includes(role) ? <p role="alert" className="error-box">Not allowed: reports are for finance managers, controllers and auditors.</p>
         : (
           <>
             <ReportSection title="AP aging" csv={csv("aging", "aging.csv")}><AgingPanel /></ReportSection>

@@ -2,8 +2,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import type { MeResponse, Role } from "@/contracts";
-import { FORBIDDEN, post, useApi } from "./api";
+import type { Role } from "@/contracts";
+import { FORBIDDEN, post } from "./api";
+import { useCurrentUser } from "./CurrentUser";
 import { LogoMark } from "./icons";
 
 // Which links each role sees. Looks only: the server still answers 403 on any page or call the role may not use.
@@ -25,9 +26,8 @@ const LINKS: [string, string, Role[]][] = [
 export const linksFor = (role?: Role) => LINKS.filter(([, , roles]) => role && roles.includes(role));
 
 export default function Header() {
-  // The layout stays mounted between pages, so ask again whenever the path changes (e.g. right after login).
   const path = usePathname();
-  const { data, error } = useApi<MeResponse>(`/api/me?at=${encodeURIComponent(path)}`);
+  const { user, error } = useCurrentUser();
   const router = useRouter();
   // A 403 from any call lands here as the server's own message; it clears when the page changes.
   const [denied, setDenied] = useState<string>();
@@ -47,13 +47,13 @@ export default function Header() {
     <header className="topbar">
       <Link href="/" className="brand"><LogoMark /> Harborline AP</Link>
       <nav aria-label="Main">
-        {linksFor(data?.user.role).map(([href, label]) => (
+        {linksFor(user?.role).map(([href, label]) => (
           <Link key={href} href={href} aria-current={path === href || path.startsWith(href + "/") ? "page" : undefined}>{label}</Link>
         ))}
       </nav>
       <span className="who">
-        {data ? <>{data.user.name} <span className="role">{data.user.role.replaceAll("_", " ")}</span></> : error ? "Not signed in" : "…"}{" "}
-        {data ? <button className="secondary" onClick={signOut}>Sign out</button> : <Link href="/login">Sign in</Link>}
+        {user ? <>{user.name} <span className="role">{user.role.replaceAll("_", " ")}</span></> : error ? "Not signed in" : "…"}{" "}
+        {user ? <button className="secondary" onClick={signOut}>Sign out</button> : <Link href="/login">Sign in</Link>}
       </span>
     </header>
     {denied && <div role="alert" className="banner">{denied} <button className="secondary" onClick={() => setDenied(undefined)}>Dismiss</button></div>}

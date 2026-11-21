@@ -6,11 +6,11 @@ let role = "finance_manager";
 let payload: unknown = [];
 vi.mock("@/components/api", async (orig) => ({
   ...(await orig<typeof import("@/components/api")>()),
-  useApi: () => ({ data: { user: { id: 1, name: "T", role } } }),
   Load: ({ children }: { children: (d: unknown, r: () => void) => unknown }) => children(payload, () => {}),
 }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/reports", useRouter: () => ({ push: () => {} }) }));
 
+import { asRole } from "@/components/asRole";
 import { BarChart } from "./Charts";
 import DashboardCharts, { AgingPanel, TopVendors } from "./ReportCharts";
 import { Flags, call } from "./api";
@@ -31,17 +31,17 @@ test("two series get a legend that names them", () => {
 });
 
 test("reports page lists every section with a ?format=csv link", () => {
-  const html = renderToString(<Reports />);
+  const html = renderToString(asRole(role, <Reports />));
   for (const h of ["AP aging", "Spend by vendor", "Spend by department", "Spend by month", "Discounts taken versus missed"]) expect(html).toContain(h);
   expect(html.match(/format=csv/g)).toHaveLength(5);
 });
 
 test("roles outside finance_manager, controller_admin and auditor see a not-allowed message and no report", () => {
   role = "employee";
-  const html = renderToString(<Reports />);
+  const html = renderToString(asRole(role, <Reports />));
   expect(html).toContain("Not allowed");
   expect(html).not.toContain("AP aging");
-  expect(renderToString(<DashboardCharts />)).toBe("");
+  expect(renderToString(asRole(role, <DashboardCharts />))).toBe("");
 });
 
 test("empty reports say so instead of drawing an empty chart", () => {
@@ -53,7 +53,7 @@ test("empty reports say so instead of drawing an empty chart", () => {
 
 test("dashboard shows the aging and top vendors blocks for a report role", () => {
   payload = [{ bucket: "90+", key: "Acme", invoices: 1, totalCadCents: 5000 }]; // one stub feeds both blocks
-  const html = renderToString(<DashboardCharts />);
+  const html = renderToString(asRole(role, <DashboardCharts />));
   expect(html).toContain("AP aging");
   expect(html).toContain("Top vendors by spend");
 });

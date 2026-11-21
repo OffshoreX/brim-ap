@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { MeResponse, Role } from "@/contracts";
-import { call, money, useApi } from "./api";
+import type { Role } from "@/contracts";
+import { call, money } from "./api";
+import { useCurrentUser } from "./CurrentUser";
 import { Icon } from "./icons";
 
 // Looks only: where each role lands and which numbers it sees. The server still decides what each call may do.
@@ -82,8 +83,7 @@ export async function loadCounters(role: Role) {
 
 // Shown at the top of the page the signed-in role lands on; renders nothing on any other page.
 export default function RoleHome({ page }: { page: string }) {
-  const { data } = useApi<MeResponse>("/api/me");
-  const role = data?.user.role;
+  const { role } = useCurrentUser();
   const [counters, setCounters] = useState<Awaited<ReturnType<typeof loadCounters>>>();
   useEffect(() => {
     if (role && HOME[role].path === page) loadCounters(role).then(setCounters);
