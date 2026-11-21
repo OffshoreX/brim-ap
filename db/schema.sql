@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
   entity TEXT NOT NULL,
   entity_id TEXT,
   before TEXT,
-  after TEXT
+  after TEXT,
+  prev_hash TEXT,  -- hash chain: row_hash of the previous row ('' for the first)
+  row_hash TEXT    -- sha256 of prev_hash + this row's fields, computed only in src/server/audit.ts
 );
 
 -- The audit trail is append-only: edits and deletes are blocked in the database itself.

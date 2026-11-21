@@ -1,6 +1,7 @@
 // Loads brim_ap_dataset/data/*.csv into the domain tables. Idempotent: every row is an upsert on a stable key.
-// Imported by scripts/import-dataset.mjs (Node strips the types), so keep this file free of extensionless relative imports.
+// Imported by scripts/import-dataset.mjs, which re-runs itself with a resolver for the extensionless relative imports.
 import type Database from "better-sqlite3";
+import { appendAudit } from "./audit";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -153,7 +154,7 @@ export function importDataset(db: Database.Database, dir = path.join(process.cwd
     }
     const summary = counts(db);
     // Bulk load is a state change too: one append-only audit row per run with the resulting counts.
-    db.prepare("INSERT INTO audit_log (action, entity, after) VALUES ('import_dataset', 'dataset', ?)").run(JSON.stringify(summary));
+    appendAudit(db, { actorId: null, action: "import_dataset", entity: "dataset", after: summary });
   })();
   return counts(db);
 }
