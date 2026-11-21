@@ -19,10 +19,11 @@ export function requireRole(request: Request, allowedRoles: readonly Role[]): Us
   return user;
 }
 
-// Turns a thrown HttpError into a JSON response; anything else is a real bug, rethrow.
-export function handle(fn: () => Response): Response {
+// Turns a thrown HttpError into a JSON response; works for sync and async route code.
+// Anything else is a real bug, rethrow.
+export async function handle(fn: () => Response | Promise<Response>): Promise<Response> {
   try {
-    return fn();
+    return await fn();
   } catch (e) {
     if (e instanceof HttpError) return Response.json({ error: e.message }, { status: e.status });
     throw e;
