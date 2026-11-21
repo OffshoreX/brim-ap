@@ -16,11 +16,12 @@ Read this first. Every agent in this repo follows it. The human is Ulysse (the l
 
 | Agent | Owns | Never touches |
 |---|---|---|
-| ui | src/app/**, src/components/**, public/** | src/server/**, src/extract/**, db/**, scripts/** |
-| engine | src/server/**, db/**, scripts/** | src/app/**, src/components/**, src/extract/** |
+| ui | src/app/** except src/app/api/**, src/components/**, public/** | src/server/**, src/extract/**, src/app/api/**, db/**, scripts/** |
+| engine | src/server/**, src/app/api/**, db/**, scripts/** | rest of src/app/**, src/components/**, src/extract/** |
 | extract | src/extract/** | everything else |
 | lead (Ulysse) | AGENTS.md, CLAUDE.md, README.md, docs/**, src/contracts.ts, package.json, config files | nothing is off limits |
 
+- API route files under src/app/api/** are engine's and stay thin: they parse the request, call requireRole, then call a function in src/server/**.
 - Need a change outside your folders? Do not make it. Put the request in your PR description and stop.
 - src/contracts.ts changes only through the lead. Propose the exact diff in the PR description.
 - Adding a dependency needs the lead's yes first.
