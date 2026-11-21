@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useParams } from "next/navigation";
 import { Flags, Load, money, Notice, post, type Flag } from "@/components/api";
+import { Empty, StatusBadge, Table } from "@/components/ui";
 
 type Line = { lineNo: number; description: string; quantity: number; unitPriceCents: number; amountCents: number; currency: string; taxCents: number | null; glCode: string | null };
 type Step = { stepNo: number; role: string; userName: string | null; delegatedFromId: number | null; reason: string | null; status: string };
@@ -32,7 +33,13 @@ export default function InvoicePage() {
       <Load<Detail> url={`/api/invoices/${id}?v=${version}`}>
         {(d) => (
           <>
-            <p>Status: <strong>{d.status}</strong></p>
+            <p>Status: <StatusBadge status={d.status} /></p>
+            {d.flags.length > 0 && (
+              <section className="flagbox" aria-label="Flags">
+                <h2>Why this needs attention ({d.flags.length})</h2>
+                <Flags flags={d.flags} />
+              </section>
+            )}
             <div className="row">
               {d.status === "pending_approval" && (
                 <>
@@ -48,62 +55,69 @@ export default function InvoicePage() {
             </div>
             <Notice {...msg} />
             <div className="split">
-              <section>
-                <h2>Extracted fields</h2>
-                <table><tbody>
-                  <tr><th>Vendor</th><td>{d.vendor?.name ?? "—"}</td></tr>
-                  <tr><th>Invoice no.</th><td>{d.invoiceNumber || "—"}</td></tr>
-                  <tr><th>Date / due</th><td>{d.invoiceDate || "—"} / {d.dueDate ?? "—"}</td></tr>
-                  <tr><th>Subtotal</th><td>{money(d.subtotalCents, d.currency)}</td></tr>
-                  <tr><th>GST/HST</th><td>{money(d.gstHstCents, d.currency)}</td></tr>
-                  <tr><th>PST/QST</th><td>{money(d.pstQstCents, d.currency)}</td></tr>
-                  <tr><th>Total</th><td>{money(d.totalCents, d.currency)}</td></tr>
-                </tbody></table>
-                <details><summary>Raw extraction</summary><pre>{JSON.stringify(d.extraction, null, 2)}</pre></details>
-              </section>
-              <section>
+              <section className="panel">
                 <h2>File</h2>
                 <object className="preview" data={`/api/invoices/${id}/file`}>Preview not available for this file.</object>
               </section>
+              <section className="panel">
+                <h2>Extracted fields</h2>
+                <dl className="fields">
+                  <dt>Vendor</dt><dd>{d.vendor?.name ?? "—"}</dd>
+                  <dt>Invoice no.</dt><dd>{d.invoiceNumber || "—"}</dd>
+                  <dt>Date</dt><dd>{d.invoiceDate || "—"}</dd>
+                  <dt>Due</dt><dd>{d.dueDate ?? "—"}</dd>
+                  <dt>Subtotal</dt><dd>{money(d.subtotalCents, d.currency)}</dd>
+                  <dt>GST/HST</dt><dd>{money(d.gstHstCents, d.currency)}</dd>
+                  <dt>PST/QST</dt><dd>{money(d.pstQstCents, d.currency)}</dd>
+                  <dt><strong>Total</strong></dt><dd><strong>{money(d.totalCents, d.currency)}</strong></dd>
+                </dl>
+                <details><summary>Raw extraction</summary><pre>{JSON.stringify(d.extraction, null, 2)}</pre></details>
+              </section>
             </div>
             <h2>Lines</h2>
-            <table>
+            <Table>
               <thead><tr><th>#</th><th>Description</th><th className="num">Qty</th><th className="num">Unit</th><th className="num">Amount</th><th className="num">Tax</th><th>GL</th></tr></thead>
               <tbody>
                 {d.lines.map((l) => (
-                  <tr key={l.lineNo}><td>{l.lineNo}</td><td>{l.description}</td><td className="num">{l.quantity}</td><td className="num">{money(l.unitPriceCents)}</td>
-                    <td className="num">{money(l.amountCents, l.currency)}</td><td className="num">{money(l.taxCents)}</td><td>{l.glCode ?? "—"}</td></tr>
+                  <tr key={l.lineNo}><td>{l.lineNo}</td><td>{l.description}</td><td className="num">{l.quantity}</td><td className="num">{money(l.unitPriceCents, l.currency)}</td>
+                    <td className="num">{money(l.amountCents, l.currency)}</td><td className="num">{money(l.taxCents, l.currency)}</td><td>{l.glCode ?? "—"}</td></tr>
                 ))}
               </tbody>
-            </table>
-            <h2>Flags</h2>
-            <Flags flags={d.flags} />
+            </Table>
             <h2>Approval chain</h2>
-            <table>
-              <thead><tr><th>Step</th><th>Role</th><th>Approver</th><th>Status</th><th>Reason</th></tr></thead>
-              <tbody>
-                {d.approvalChain.map((s) => (
-                  <tr key={s.stepNo}><td>{s.stepNo}</td><td>{s.role}</td><td>{s.userName ?? "—"}{s.delegatedFromId ? " (delegate)" : ""}</td><td>{s.status}</td><td>{s.reason ?? ""}</td></tr>
-                ))}
-              </tbody>
-            </table>
-            {d.approvals.map((a) => <p key={a.id}>Step {a.stepNo}: {a.decision} at {a.decidedAt}{a.comment ? ` — ${a.comment}` : ""}</p>)}
+            {d.approvalChain.length === 0 ? <Empty>No approval steps yet. They are created when the invoice is routed.</Empty> : (
+              <ol className="steps">
+                {d.approvalChain.map((s) => {
+                  const done = d.approvals.find((a) => a.stepNo === s.stepNo);
+                  return (
+                    <li key={s.stepNo} className={`step-${done?.decision ?? "pending"}`}>
+                      <strong>Step {s.stepNo}: {s.role.replaceAll("_", " ")}</strong> — {s.userName ?? "unassigned"}{s.delegatedFromId ? " (delegate)" : ""}
+                      {s.reason && <span className="muted"> · {s.reason}</span>}
+                      <br />
+                      {done ? <>{done.decision} on {done.decidedAt}{done.comment ? ` — “${done.comment}”` : ""}</> : <span className="muted">Waiting ({s.status})</span>}
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
           </>
         )}
       </Load>
-      <h2>Audit trail</h2>
-      <Load<Audit[]> url={`/api/invoices/${id}/trail?v=${version}`}>
-        {(rows) => (
-          <table>
-            <thead><tr><th>When</th><th>Who</th><th>What</th><th>Before</th><th>After</th></tr></thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}><td>{r.at}</td><td>{r.actorId ?? "system"}</td><td>{r.action}</td><td><code>{JSON.stringify(r.before)}</code></td><td><code>{JSON.stringify(r.after)}</code></td></tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Load>
+      <details>
+        <summary>Audit trail</summary>
+        <Load<Audit[]> url={`/api/invoices/${id}/trail?v=${version}`}>
+          {(rows) => rows.length === 0 ? <Empty>No audit entries for this invoice yet.</Empty> : (
+            <Table>
+              <thead><tr><th>When</th><th>Who</th><th>What</th><th>Before</th><th>After</th></tr></thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id}><td>{r.at}</td><td>{r.actorId ?? "system"}</td><td>{r.action}</td><td><code>{JSON.stringify(r.before)}</code></td><td><code>{JSON.stringify(r.after)}</code></td></tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Load>
+      </details>
     </main>
   );
 }

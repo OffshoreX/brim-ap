@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { Empty, Table } from "@/components/ui";
 import { Load, money } from "@/components/api";
 
 type Row = { invoiceId: number; stepNo: number; role: string; reason: string | null; invoiceNumber: string; totalCents: number; currency: string; delegatedFromId: number | null };
@@ -11,8 +12,8 @@ export default function ApprovalsPage() {
       <h1>Approvals inbox</h1>
       <Load<Row[]> url="/api/approvals/inbox">
         {(rows) =>
-          rows.length === 0 ? <p>Nothing waiting for you.</p> : (
-            <table>
+          rows.length === 0 ? <Empty>Nothing is waiting for your approval.</Empty> : (
+            <Table>
               <thead><tr><th>Invoice</th><th>Step</th><th>As</th><th className="num">Total</th><th>Why you</th></tr></thead>
               <tbody>
                 {rows.map((r) => (
@@ -22,7 +23,7 @@ export default function ApprovalsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           )
         }
       </Load>

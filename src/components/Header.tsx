@@ -1,14 +1,23 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { MeResponse } from "@/contracts";
+import type { MeResponse, Role } from "@/contracts";
 import { post, useApi } from "./api";
 
-// Every link is shown to everyone; the server answers 403 on pages a role may not use.
-const LINKS: [string, string][] = [
-  ["/dashboard", "Dashboard"], ["/invoices", "Invoices"], ["/approvals", "Approvals"], ["/exceptions", "Exceptions"],
-  ["/payments", "Payments"], ["/vendors", "Vendors"], ["/audit", "Audit log"], ["/admin/approval-rules", "Approval rules"], ["/inbox", "Inbox"],
+// Which links each role sees. Looks only: the server still answers 403 on any page or call the role may not use.
+const ALL: Role[] = ["employee", "ap_clerk", "approver", "finance_manager", "controller_admin", "auditor"];
+const LINKS: [string, string, Role[]][] = [
+  ["/dashboard", "Dashboard", ALL],
+  ["/invoices", "Invoices", ALL],
+  ["/approvals", "Approvals", ["approver", "finance_manager", "controller_admin"]],
+  ["/exceptions", "Exceptions", ["ap_clerk", "finance_manager", "controller_admin"]],
+  ["/payments", "Payments", ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
+  ["/vendors", "Vendors", ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
+  ["/audit", "Audit log", ["controller_admin", "auditor"]],
+  ["/admin/approval-rules", "Approval rules", ["controller_admin"]],
+  ["/inbox", "Inbox", ["ap_clerk", "controller_admin", "auditor"]],
 ];
+export const linksFor = (role?: Role) => LINKS.filter(([, , roles]) => role && roles.includes(role));
 
 export default function Header() {
   // The layout stays mounted between pages, so ask again whenever the path changes (e.g. right after login).
@@ -20,12 +29,15 @@ export default function Header() {
     router.push("/login");
   }
   return (
-    <header>
+    <header className="topbar">
+      <strong className="brand">brim-ap</strong>
       <nav aria-label="Main">
-        {LINKS.map(([href, label]) => <Link key={href} href={href}>{label}</Link>)}
+        {linksFor(data?.user.role).map(([href, label]) => (
+          <Link key={href} href={href} aria-current={path === href || path.startsWith(href + "/") ? "page" : undefined}>{label}</Link>
+        ))}
       </nav>
       <span className="who">
-        {data ? `${data.user.name} (${data.user.role})` : error ? "Not signed in" : "…"}{" "}
+        {data ? <>{data.user.name} <span className="role">{data.user.role.replaceAll("_", " ")}</span></> : error ? "Not signed in" : "…"}{" "}
         {data ? <button onClick={signOut}>Sign out</button> : <Link href="/login">Sign in</Link>}
       </span>
     </header>

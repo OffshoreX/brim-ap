@@ -1,5 +1,6 @@
 "use client";
 import { useState, type FormEvent } from "react";
+import { Empty, Table } from "@/components/ui";
 import { Load } from "@/components/api";
 
 type Row = { id: number; at: string; actorId: number | null; action: string; entity: string; entityId: string | null; before: unknown; after: unknown };
@@ -25,8 +26,8 @@ export default function AuditPage() {
         <button type="submit">Filter</button>
       </form>
       <Load<Row[]> url={`/api/audit?${query}`}>
-        {(rows) => (
-          <table>
+        {(rows) => rows.length === 0 ? <Empty>No audit entries match this filter.</Empty> : (
+          <Table>
             <thead><tr><th>When</th><th>Who</th><th>What</th><th>Entity</th><th>Before</th><th>After</th></tr></thead>
             <tbody>
               {rows.map((r) => (
@@ -34,7 +35,7 @@ export default function AuditPage() {
                   <td><code>{JSON.stringify(r.before)}</code></td><td><code>{JSON.stringify(r.after)}</code></td></tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
       </Load>
     </main>

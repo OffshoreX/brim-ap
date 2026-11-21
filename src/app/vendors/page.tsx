@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { Empty, Table } from "@/components/ui";
 import { Load } from "@/components/api";
 
 type Vendor = { id: number; name: string; category: string | null; status: string | null; province_or_state: string | null; payment_terms_days: number | null; bank_account_last4: string };
@@ -10,8 +11,8 @@ export default function VendorsPage() {
     <main>
       <h1>Vendors</h1>
       <Load<Vendor[]> url="/api/vendors">
-        {(vendors) => (
-          <table>
+        {(vendors) => vendors.length === 0 ? <Empty>No vendors found.</Empty> : (
+          <Table>
             <thead><tr><th>Name</th><th>Category</th><th>Status</th><th>Province</th><th className="num">Terms (days)</th><th>Bank acct</th></tr></thead>
             <tbody>
               {vendors.map((v) => (
@@ -21,7 +22,7 @@ export default function VendorsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
       </Load>
     </main>

@@ -1,5 +1,6 @@
 "use client";
 import { useState, type FormEvent } from "react";
+import { Empty, StatusBadge, Table } from "@/components/ui";
 import { download, Load, money, Notice, post } from "@/components/api";
 
 type Pay = { id: number; invoiceId: number; invoiceNumber: string; method: string; status: string; scheduledDate: string | null; paidAt: string | null; amountCents: number; currency: string; reference: string | null };
@@ -34,19 +35,19 @@ export default function PaymentsPage() {
       </form>
       <Notice {...msg} />
       <Load<Pay[]> url={`/api/payments?v=${version}`}>
-        {(rows) => (
-          <table>
+        {(rows) => rows.length === 0 ? <Empty>No payments yet. Prepare one from an approved invoice.</Empty> : (
+          <Table>
             <thead><tr><th>#</th><th>Invoice</th><th>Method</th><th>Status</th><th>Scheduled</th><th className="num">Amount</th><th>Reference</th><th></th></tr></thead>
             <tbody>
               {rows.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.id}</td><td>{p.invoiceNumber}</td><td>{p.method}</td><td>{p.status}</td><td>{p.scheduledDate ?? ""}</td>
+                  <td>{p.id}</td><td>{p.invoiceNumber}</td><td>{p.method}</td><td><StatusBadge status={p.status} /></td><td>{p.scheduledDate ?? ""}</td>
                   <td className="num">{money(p.amountCents, p.currency)}</td><td>{p.reference ?? ""}</td>
                   <td>{p.status === "scheduled" && <button onClick={() => act("/api/payments/release", { paymentId: p.id }, `Payment ${p.id} released`)}>Release</button>}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
       </Load>
       <h2>EFT file</h2>
@@ -54,15 +55,15 @@ export default function PaymentsPage() {
       <h2>Cheques to print</h2>
       <Load<{ cheques: Cheque[] }> url={`/api/payments/cheques?v=${version}`}>
         {({ cheques }) =>
-          cheques.length === 0 ? <p>No released cheques.</p> : (
-            <table>
+          cheques.length === 0 ? <Empty>No released cheques to print.</Empty> : (
+            <Table>
               <thead><tr><th>Payee</th><th>Address</th><th>Invoice</th><th className="num">Amount</th><th>Reference</th></tr></thead>
               <tbody>
                 {cheques.map((c) => (
                   <tr key={c.paymentId}><td>{c.vendor}</td><td>{c.address}</td><td>{c.invoiceNumber}</td><td className="num">{money(c.amountCents, c.currency)}</td><td>{c.reference}</td></tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           )
         }
       </Load>

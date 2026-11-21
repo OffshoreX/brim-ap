@@ -75,10 +75,10 @@ test.each(PAGES)("%s page renders its data", (_name, Page, expected) => {
   expect(renderToString(<Page />)).toContain(expected);
 });
 
-test("header renders its links and a sign-in prompt before /api/me answers", () => {
+test("header shows only a sign-in prompt before /api/me answers (links appear once the role is known)", () => {
   const html = renderToString(<Header />);
-  expect(html).toContain("Dashboard");
-  expect(html).toContain("Audit log");
+  expect(html).toContain("Sign in");
+  expect(html).not.toContain("Audit log");
 });
 
 afterEach(() => vi.unstubAllGlobals());
