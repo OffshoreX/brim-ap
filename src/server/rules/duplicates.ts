@@ -32,11 +32,13 @@ export function findDuplicates(inv: InvoiceKey, existing: InvoiceKey[]): Finding
       out.push({ code: 'DUPLICATE_EXACT', message: `Same vendor and invoice number as ${ref}`, severity: 'error' });
       continue;
     }
+    // Same total close in time is the signal. A close number alone is just the next one in the vendor's sequence
+    // (000921 after 000919), and a monthly fee repeats its total all year, so neither counts without the 30-day window.
     const reasons: string[] = [];
     if (e.totalCents === inv.totalCents && days(e.date, inv.date) <= 30) {
       reasons.push('same total within 30 days');
+      if (editDistance(enum_, num) <= 2) reasons.push('invoice number within edit distance 2');
     }
-    if (editDistance(enum_, num) <= 2) reasons.push('invoice number within edit distance 2');
     if (reasons.length) {
       out.push({ code: 'DUPLICATE_NEAR', message: `Possible duplicate of ${ref}: ${reasons.join(', ')}`, severity: 'warning' });
     }
