@@ -11,8 +11,8 @@ const ALLOWED: Record<InvoiceStatus, InvoiceStatus[]> = {
   received: ["needs_review", "pending_approval", "rejected"],
   needs_review: ["pending_approval", "rejected"],
   pending_approval: ["approved", "rejected"],
-  // approved -> paid stays until the release flow is rebuilt on top of scheduled.
-  approved: ["scheduled", "paid"],
+  // Money moves in two steps: prepare (approved -> scheduled), then release (scheduled -> paid).
+  approved: ["scheduled"],
   scheduled: ["paid"],
   rejected: [],
   paid: [],

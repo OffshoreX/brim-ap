@@ -13,7 +13,6 @@ const ALLOWED: [InvoiceStatus, InvoiceStatus][] = [
   ["pending_approval", "approved"],
   ["pending_approval", "rejected"],
   ["approved", "scheduled"],
-  ["approved", "paid"],
   ["scheduled", "paid"],
 ];
 
@@ -49,6 +48,7 @@ test.each([
   ["approved", "pending_approval"],
   ["scheduled", "approved"],
   ["paid", "scheduled"],
+  ["approved", "paid"],
 ] as [InvoiceStatus, InvoiceStatus][])("%s -> %s throws and changes nothing", (from, to) => {
   makeInvoice(from);
   expect(() => transition(1, to, 1)).toThrow();
