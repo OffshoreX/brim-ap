@@ -62,7 +62,7 @@ test("chart SVG has no <title> tooltip and shows the full vendor name, wrapped",
   expect(html).not.toContain("<title");
   expect(html).not.toContain("…");
   expect(wrap(long).join(" ")).toBe(long);
-  expect(html).toContain("1,234.56 CAD".replace("1,234.56", "50.00")); // money tick carries the currency
+  expect(html).toContain("50.00 CAD"); // money ticks carry the currency
 });
 
 test("ui.css: chart tokens, bar-grow of 250ms and the reduced-motion guard are present", () => {
