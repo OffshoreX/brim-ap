@@ -6,7 +6,6 @@ import path from "node:path";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { ExtractedInvoice } from "@/extract/extractInvoice";
 import { POST as upload } from "@/app/api/invoices/upload/route";
-import { POST as processInvoice } from "@/app/api/invoices/[id]/process/route";
 import { POST as decide } from "@/app/api/invoices/[id]/decision/route";
 import { POST as prepare } from "@/app/api/payments/prepare/route";
 import { POST as release } from "@/app/api/payments/release/route";
@@ -44,19 +43,17 @@ const post = (url: string, userId: number, body: unknown) =>
 const ctx = (id: number) => ({ params: Promise.resolve({ id: String(id) }) });
 
 let n = 0;
-async function uploadAs(userId: number): Promise<number> {
+// Upload now runs the pipeline too, so the model's answer is set first; the result carries what processing found.
+async function uploadAs(userId: number, invoice: ExtractedInvoice) {
+  extractMock.mockResolvedValueOnce({ status: "ok", invoice, cached: false });
   const form = new FormData();
   // Unique bytes per call so the content hash never collapses two invoices into one.
   form.append("file", new File([`%PDF-1.4 e2e ${++n}`], "invoice.pdf", { type: "application/pdf" }));
   const res = await upload(new Request("http://x/api/invoices/upload", { method: "POST", headers: as(userId), body: form }));
   expect(res.status).toBe(200);
-  return (await res.json())[0].invoiceId;
-}
-async function processAs(userId: number, invoiceId: number, invoice: ExtractedInvoice) {
-  extractMock.mockResolvedValueOnce({ status: "ok", invoice, cached: false });
-  const res = await processInvoice(post("http://x", userId, {}), ctx(invoiceId));
-  expect(res.status).toBe(200);
-  return res.json() as Promise<{ status: string; flags: { code: string; severity: string }[] }>;
+  const { results } = (await res.json()) as { results: { invoiceId: number; status: string; flags: { code: string; severity: string }[]; error: string | null }[] };
+  expect(results[0].error).toBeNull();
+  return results[0];
 }
 
 // ---- dataset lookups, so no vendor name or number is typed into the test ----
@@ -90,8 +87,8 @@ const status = (id: number) => (getDb().prepare("SELECT status FROM invoices WHE
 
 test("(a) a clean invoice goes upload, process, every chain step, prepare, release, paid, and shows in the EFT file", async () => {
   const v = vendor("V030"); // no contract, no PO needed, no bank change on record
-  const id = await uploadAs(EMPLOYEE);
-  const body = await processAs(CLERK, id, invoiceFor(v, "E2E-A-1", [line("Strategy workshop", 700_000), line("Report", 407_300)]));
+  const body = await uploadAs(EMPLOYEE, invoiceFor(v, "E2E-A-1", [line("Strategy workshop", 700_000), line("Report", 407_300)]));
+  const id = body.invoiceId;
   expect(body.flags.filter((f) => f.severity === "error")).toEqual([]);
   expect(body.status).toBe("pending_approval");
 
@@ -133,8 +130,8 @@ test("(a) a clean invoice goes upload, process, every chain step, prepare, relea
 
 test("(b) the invoice from V004 with an unverified email bank change is held in needs_review with a bank flag", async () => {
   const v = vendor("V004"); // bank_change_history BC-009: email_request, not verified by callback
-  const id = await uploadAs(EMPLOYEE);
-  const body = await processAs(CLERK, id, invoiceFor(v, "E2E-B-1", [line("Linehaul", 1_000_000), line("Fuel surcharge (8%)", 80_000)]));
+  const body = await uploadAs(EMPLOYEE, invoiceFor(v, "E2E-B-1", [line("Linehaul", 1_000_000), line("Fuel surcharge (8%)", 80_000)]));
+  const id = body.invoiceId;
   expect(body.status).toBe("needs_review");
   expect(body.flags.map((f) => f.code)).toContain("bank_change_unverified");
   expect(status(id)).toBe("needs_review");
@@ -148,8 +145,9 @@ test("(b) the invoice from V004 with an unverified email bank change is held in 
 
 test("(c) a requester who is also the department manager is rerouted to their own manager, and cannot approve", async () => {
   const v = vendor("V030");
-  const id = await uploadAs(CONTROLLER); // Marcus manages Finance, so as requester he would be the first approver
-  const body = await processAs(CLERK, id, invoiceFor(v, "E2E-C-1", [line("Advisory", 500_000)]));
+  // Marcus manages Finance, so as requester he would be the first approver
+  const body = await uploadAs(CONTROLLER, invoiceFor(v, "E2E-C-1", [line("Advisory", 500_000)]));
+  const id = body.invoiceId;
   expect(body.status).toBe("pending_approval");
   const [first, ...rest] = steps(id);
   expect(rest).toEqual([]);
@@ -169,12 +167,12 @@ test("(d) an unverified copy of a historical invoice lands in needs_review as an
   const hist = getDb()
     .prepare("SELECT i.invoice_number AS number, i.total_cents AS total, i.invoice_date AS date, v.name FROM invoices i JOIN vendors v ON v.id = i.vendor_id WHERE i.currency = 'CAD' ORDER BY i.id LIMIT 1")
     .get() as { number: string; total: number; date: string; name: string };
-  const id = await uploadAs(EMPLOYEE);
   const copy: ExtractedInvoice = {
     vendorName: hist.name, invoiceNumber: hist.number, invoiceDate: hist.date, dueDate: null, currency: "CAD",
     lines: [line("Same as before", hist.total)], taxes: [], totalCents: hist.total, poNumber: null, bankDetails: null, language: "en",
   };
-  const body = await processAs(CLERK, id, copy);
+  const body = await uploadAs(EMPLOYEE, copy);
+  const id = body.invoiceId;
   expect(body.status).toBe("needs_review");
   expect(body.flags.find((f) => f.code === "DUPLICATE_EXACT")).toMatchObject({ severity: "error" });
   expect(status(id)).toBe("needs_review");
