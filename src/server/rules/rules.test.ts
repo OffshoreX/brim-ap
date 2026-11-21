@@ -34,9 +34,20 @@ describe('findDuplicates', () => {
   it('same total but more than 30 days apart is not a match', () => {
     expect(findDuplicates(incoming({ number: 'ZZZ-9', date: '2026-03-01' }), [base])).toEqual([]);
   });
-  it('near duplicate by edit distance', () => {
-    const f = findDuplicates(incoming({ number: 'INV-1002', totalCents: 1, date: '2027-01-01' }), [base]);
+  it('a close number adds to the reason when the total and date match', () => {
+    const f = findDuplicates(incoming({ number: 'INV-1002', date: '2026-01-12' }), [base]);
     expect(f[0].message).toContain('edit distance');
+  });
+  it('a close number alone, or with the same total a year later, is not a duplicate', () => {
+    expect(findDuplicates(incoming({ number: 'INV-1002', totalCents: 1 }), [base])).toEqual([]);
+    expect(findDuplicates(incoming({ number: 'INV-1002', date: '2027-01-01' }), [base])).toEqual([]);
+  });
+  it('a close number with a different total is the next invoice in the sequence, not a duplicate', () => {
+    expect(findDuplicates(incoming({ number: '000921', totalCents: 212136 }), [{ ...base, number: '000919', totalCents: 68720 }])).toEqual([]);
+  });
+  it('a suffixed resubmission with the same total is caught', () => {
+    const f = findDuplicates(incoming({ number: '000903-A', date: '2026-07-06', totalCents: 557437 }), [{ ...base, number: '000903', date: '2026-07-04', totalCents: 557437 }]);
+    expect(codes(f)).toEqual(['DUPLICATE_NEAR']);
   });
   it('different vendor with the same number is not a duplicate', () => {
     expect(findDuplicates(incoming({ vendorId: 'v2' }), [base])).toEqual([]);

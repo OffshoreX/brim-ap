@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { extractInvoice, type ExtractedInvoice, type ExtractResult } from "@/extract/extractInvoice";
+import { extractInvoice, type ExtractedInvoice, type ExtractResult } from "../extract/extractInvoice"; // relative, not "@/": scripts/run-batch.mjs runs this file under plain Node
 import { writeAudit } from "./audit";
 import { createChain } from "./approvals";
 import { getDb } from "./db";
@@ -17,6 +17,7 @@ import { checkPoMatch } from "./rules/po";
 import { findSplitInvoices } from "./rules/split";
 import { checkTax, type TaxCodeRate, type TaxLine } from "./rules/tax";
 import type { Finding } from "./rules/types";
+import { matchVendor } from "./rules/vendorMatch";
 
 // Response types live here, not in contracts.ts (lead-owned).
 export type ProcessResult = {
@@ -36,8 +37,6 @@ export class PipelineError extends Error {
 const MIME: Record<string, string> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg" };
 const error = (code: string, message: string): Finding => ({ code, message, severity: "error" });
 const warning = (code: string, message: string): Finding => ({ code, message, severity: "warning" });
-// Case, spacing and punctuation are formatting, not a different company.
-const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
 // Policy knobs handed to the rules as arguments; the rules themselves contain no numbers.
 const PO_TOLERANCE_BPS = 0; // P12: invoice within the PO balance, no extra slack
@@ -247,16 +246,18 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     }
     const x: ExtractedInvoice = extracted.invoice;
 
-    // Vendor match. The extractor does not return a tax id yet, so name is the only key.
+    // Vendor match (rules/vendorMatch.ts). The extractor does not return a tax number yet, so only the name is passed.
     const vendors = db
-      .prepare("SELECT id, name, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at FROM vendors")
-      .all() as Vendor[];
-    const hits = vendors.filter((v) => normName(v.name) === normName(x.vendorName));
-    const vendor = hits.length === 1 ? hits[0] : null;
+      .prepare("SELECT id, name, gst_hst_number AS taxNumber, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at FROM vendors")
+      .all() as (Vendor & { taxNumber: string | null })[];
+    const match = matchVendor(x.vendorName, vendors);
+    const vendor = match.status === "matched" ? vendors.find((v) => v.id === match.id)! : null;
     const vendorId = vendor?.id ?? null;
     const flags: Finding[] = [];
-    if (hits.length === 0) flags.push(error("vendor_unmatched", `No vendor named "${x.vendorName}"`));
-    if (hits.length > 1) flags.push(error("vendor_ambiguous", `${hits.length} vendors match "${x.vendorName}"`));
+    if (match.status === "none") flags.push(error("vendor_unmatched", `No vendor named "${x.vendorName}"`));
+    if (match.status === "ambiguous") flags.push(error("vendor_ambiguous", `${match.ids.length} vendors match "${x.vendorName}"`));
+    // Matched, but only after ignoring formatting: say so, so a clerk can see which record was used.
+    if (vendor && match.status === "matched" && match.by === "normalized_name") flags.push(warning("vendor_name_variant", `"${x.vendorName}" was matched to vendor "${vendor.name}"`));
     const po = x.poNumber
       ? (db.prepare("SELECT id, vendor_id, total_cents, currency FROM purchase_orders WHERE po_number = ?").get(x.poNumber) as
           | { id: number; vendor_id: number; total_cents: number; currency: string }
