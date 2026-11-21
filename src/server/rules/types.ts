@@ -36,9 +36,12 @@ export type CodingResult =
   | { status: 'suggested'; accountCode: string; taxCode: string; confidence: number; reason: string }
   | { status: 'none'; reason: string };
 
-// Payment release inputs (T6). Roles are plain strings so this file stays independent of contracts.
-export type ReleaseUser = { role: string; releaseLimitCents: number };
-export type ReleasePayment = { amountCents: number };
+// Payment release inputs. Roles are plain strings so this file stays independent of contracts.
+// Tiers are ascending; upToCents null means no upper bound. A payment uses the first tier it fits.
+export type ReleaseTier = { upToCents: number | null; roles: readonly string[] };
+export type ReleaseUser = { id: number; role: string };
+// amountCadCents is what the tiers compare; approverIds are everyone who approved the invoice.
+export type ReleasePayment = { amountCadCents: number; approverIds: readonly number[]; preparedBy: number | null };
 export type ReleaseResult = { allowed: true } | { allowed: false; reason: string };
 
 // Bank-detail change check inputs.
