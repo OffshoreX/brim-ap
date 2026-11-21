@@ -15,7 +15,7 @@ describe('suggestCoding', () => {
     }
   });
   it('picks account and tax code independently', () => {
-    const r = suggestCoding('v1', [...h('v1', 'A', 'T1', 2), ...h('v1', 'A', 'T2', 1), ...h('v1', 'B', 'T2', 1)]);
+    const r = suggestCoding('v1', [...h('v1', 'A', 'T1', 1), ...h('v1', 'A', 'T2', 1), ...h('v1', 'B', 'T2', 1)]);
     expect(r).toMatchObject({ accountCode: 'A', taxCode: 'T2' });
   });
   it('returns none on a tie', () => {
