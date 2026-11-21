@@ -1,8 +1,11 @@
 import { handle, requireRole } from "@/server/authz";
-import { listPayments } from "@/server/views";
+import { pagedJson, parsePage } from "@/server/paging";
+import { countPayments, listPayments } from "@/server/views";
 
 export const GET = (request: Request) =>
   handle(() => {
     requireRole(request, ["ap_clerk", "finance_manager", "controller_admin", "auditor"]);
-    return Response.json(listPayments());
+    const page = parsePage(request);
+    if (page instanceof Response) return page;
+    return pagedJson(listPayments(page), countPayments());
   });

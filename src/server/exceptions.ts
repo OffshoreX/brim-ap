@@ -1,6 +1,7 @@
 import type { User } from "@/contracts";
 import { writeAudit } from "./audit";
 import { getDb } from "./db";
+import { DEFAULT_PAGE, type Page } from "./paging";
 import { transition } from "./invoiceStatus";
 
 // Response types live here, not in contracts.ts (lead-owned).
@@ -39,12 +40,15 @@ function parseFlags(text: string): ExceptionFlag[] {
   );
 }
 
-export function listExceptions(): ExceptionItem[] {
+export const countExceptions = () =>
+  (getDb().prepare("SELECT COUNT(*) n FROM invoices WHERE status = 'needs_review'").get() as { n: number }).n;
+
+export function listExceptions(page: Page = DEFAULT_PAGE): ExceptionItem[] {
   const rows = getDb()
     .prepare(
-      "SELECT id, invoice_number, vendor_id, total_cents, currency, flags FROM invoices WHERE status = 'needs_review' ORDER BY id"
+      "SELECT id, invoice_number, vendor_id, total_cents, currency, flags FROM invoices WHERE status = 'needs_review' ORDER BY id LIMIT ? OFFSET ?"
     )
-    .all() as { id: number; invoice_number: string; vendor_id: number | null; total_cents: number; currency: string; flags: string }[];
+    .all(page.limit, page.offset) as { id: number; invoice_number: string; vendor_id: number | null; total_cents: number; currency: string; flags: string }[];
   return rows.map((r) => ({
     id: r.id,
     invoiceNumber: r.invoice_number,

@@ -1,8 +1,11 @@
 import { handle, requireRole } from "@/server/authz";
-import { approvalInbox } from "@/server/views";
+import { pagedJson, parsePage } from "@/server/paging";
+import { approvalInbox, countApprovalInbox } from "@/server/views";
 
 export const GET = (request: Request) =>
   handle(() => {
     const user = requireRole(request, ["approver", "finance_manager", "controller_admin"]);
-    return Response.json(approvalInbox(user));
+    const page = parsePage(request);
+    if (page instanceof Response) return page;
+    return pagedJson(approvalInbox(user, page), countApprovalInbox(user));
   });
