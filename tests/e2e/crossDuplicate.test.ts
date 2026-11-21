@@ -6,7 +6,6 @@ import path from "node:path";
 import { beforeEach, expect, test, vi } from "vitest";
 import type { ExtractedInvoice } from "@/extract/extractInvoice";
 import { POST as upload } from "@/app/api/invoices/upload/route";
-import { POST as processInvoice } from "@/app/api/invoices/[id]/process/route";
 import { getDb, resetDbForTests } from "@/server/db";
 import { importDataset } from "@/server/importDataset";
 import { signSession } from "@/server/session";
@@ -18,7 +17,6 @@ const extractMock = vi.mocked(extractInvoice);
 process.env.SESSION_SECRET = "test-secret";
 process.env.DB_PATH = ":memory:";
 
-const CLERK = 4;
 const EMPLOYEE = 13; // works in ON, so HST 13% below is the right tax
 
 beforeEach(() => {
@@ -30,19 +28,16 @@ beforeEach(() => {
 
 const as = (userId: number) => ({ cookie: `session=${signSession(userId)}` });
 let n = 0;
-async function uploadAs(userId: number): Promise<number> {
+// Upload runs the pipeline too, so the model's answer is set first and the result carries the flags.
+async function process_(invoice: ExtractedInvoice) {
+  extractMock.mockResolvedValueOnce({ status: "ok", invoice, cached: false });
   const form = new FormData();
   form.append("file", new File([`%PDF-1.4 cross ${++n}`], "invoice.pdf", { type: "application/pdf" }));
-  const res = await upload(new Request("http://x/api/invoices/upload", { method: "POST", headers: as(userId), body: form }));
+  const res = await upload(new Request("http://x/api/invoices/upload", { method: "POST", headers: as(EMPLOYEE), body: form }));
   expect(res.status).toBe(200);
-  return (await res.json())[0].invoiceId;
-}
-async function process_(invoice: ExtractedInvoice) {
-  const id = await uploadAs(EMPLOYEE);
-  extractMock.mockResolvedValueOnce({ status: "ok", invoice, cached: false });
-  const res = await processInvoice(new Request("http://x", { method: "POST", headers: { ...as(CLERK), "content-type": "application/json" }, body: "{}" }), { params: Promise.resolve({ id: String(id) }) });
-  expect(res.status).toBe(200);
-  return (await res.json()) as { status: string; flags: { code: string }[] };
+  const { results } = (await res.json()) as { results: { status: string; flags: { code: string }[]; error: string | null }[] };
+  expect(results[0].error).toBeNull();
+  return results[0];
 }
 
 // An invoice for `v` whose total (HST 13% included) is exactly `totalCents`, under a number that has never been seen.
