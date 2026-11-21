@@ -4,11 +4,16 @@ import { SeverityChip } from "./ui";
 
 // The UI never decides who may do what: every call goes to the server, which answers 401 or 403.
 // This file only turns those answers into a clear message.
+export const FORBIDDEN = "brim:forbidden";
 async function failure(res: Response): Promise<string | undefined> {
   if (res.ok) return undefined;
   if (res.status === 401) return "You are not signed in. Use the Sign in link.";
   const body = await res.json().catch(() => null);
-  if (res.status === 403) return `Not allowed: ${body?.error ?? "your role cannot do this"}`;
+  if (res.status === 403) {
+    const msg = `Not allowed: ${body?.error ?? "your role cannot do this"}`;
+    if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(FORBIDDEN, { detail: msg })); // the header shows it as a banner
+    return msg;
+  }
   return body?.error ?? `Request failed (${res.status})`;
 }
 

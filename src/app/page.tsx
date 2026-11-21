@@ -1,5 +1,15 @@
-import { redirect } from "next/navigation";
+"use client";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import type { MeResponse } from "@/contracts";
+import { call } from "@/components/api";
+import { HOME } from "@/components/RoleHome";
 
+// "/" sends each signed-in role to its own landing page, everyone else to the login.
 export default function Home() {
-  redirect("/dashboard");
+  const router = useRouter();
+  useEffect(() => {
+    call<MeResponse>("/api/me").then((r) => router.replace(r.data ? HOME[r.data.user.role].path : "/login"));
+  }, [router]);
+  return <main><p className="loading" role="status">Loading…</p></main>;
 }

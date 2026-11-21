@@ -71,3 +71,16 @@ pre { overflow: auto; }
 .tabs { display: flex; gap: .25rem; flex-wrap: wrap; margin: .5rem 0; }
 .tabs button[aria-selected="true"] { font-weight: 700; border-bottom: 3px solid currentColor; }
 .tabs button[aria-selected="false"] { background: #fff; color: var(--accent); }
+.home { margin: 0 0 1rem; }
+.about { font-size: 1.05rem; margin: 0 0 .75rem; }
+.cards.big .card { text-decoration: none; color: inherit; }
+.cards.big .card strong { font-size: 2.4rem; line-height: 1.2; }
+.cards.big a.card:hover { border-color: var(--accent); }
+.banner { background: #fef2f2; color: #991b1b; border-bottom: 2px solid #fca5a5; padding: .6rem 1rem; font-weight: 600; }
+.banner button { margin-left: .75rem; background: transparent; color: inherit; border-color: currentColor; }
+.personas { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 1rem; }
+.personas section { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 0 1rem 1rem; }
+.personas h2 { text-transform: capitalize; }
+.persona { display: block; width: 100%; text-align: left; margin: .35rem 0; }
+.persona small { display: block; opacity: .85; }
+.persona.off { background: #e5e7eb; color: #6b7280; border-color: var(--line); }
