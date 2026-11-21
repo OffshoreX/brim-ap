@@ -2,13 +2,14 @@ import { beforeEach, expect, test } from "vitest";
 import { getDb, resetDbForTests } from "./db";
 import { signSession } from "./session";
 import { createChain, decideInvoice } from "./approvals";
-import { dashboard } from "./views";
+import { approvalInbox, dashboard, readyToPay } from "./views";
 import { GET as detail } from "@/app/api/invoices/[id]/route";
 import { GET as trail } from "@/app/api/invoices/[id]/trail/route";
 import { GET as audit } from "@/app/api/audit/route";
 import { GET as inbox } from "@/app/api/approvals/inbox/route";
 import { GET as dash } from "@/app/api/dashboard/route";
 import { GET as payments } from "@/app/api/payments/route";
+import { GET as ready } from "@/app/api/payments/ready/route";
 
 process.env.SESSION_SECRET = "test-secret";
 process.env.DB_PATH = ":memory:";
@@ -48,7 +49,7 @@ test("detail: content, no bank details, each role sees only what it may", async 
   const res = await get(detail, 3);
   const d = await res.json();
   expect(d.invoiceNumber).toBe("A-1");
-  expect(d.flags).toEqual([{ code: "tax_mismatch", message: "GST off" }]);
+  expect(d.flags).toEqual([{ code: "tax_mismatch", message: "GST off", severity: "warning" }]);
   expect(d.lines[0]).toMatchObject({ glCode: "5100", gstHstCode: "GST5" });
   expect(d.approvalChain[0]).toMatchObject({ stepNo: 1, userId: 4, status: "pending" });
   expect(d.payments[0].status).toBe("scheduled");
@@ -104,4 +105,85 @@ test("payments: content; 403 for employee and approver", async () => {
   const rows = await (await list(payments, 7)).json();
   expect(rows[0]).toMatchObject({ id: 1, invoiceNumber: "A-1", status: "scheduled", amountCents: 50000 });
   for (const u of [1, 4]) expect((await list(payments, u)).status).toBe(403);
+});
+
+const approver = { id: 4, role: "approver" } as never;
+
+test("inbox rows carry vendor, dates, age, flag count and the worst flag", () => {
+  getDb().prepare("UPDATE invoices SET received_date = '2026-11-10', total_cad_cents = 51000, flags = ? WHERE id = 1").run(
+    JSON.stringify([{ code: "a", message: "info one", severity: "info" }, { code: "b", message: "blocker", severity: "error" }, "legacy"])
+  );
+  const [r] = approvalInbox(approver, undefined, "2026-11-20");
+  expect(r).toMatchObject({
+    invoiceId: 1, invoiceNumber: "A-1", vendorId: 1, vendorName: "Acme", totalCents: 50000, currency: "CAD", totalCadCents: 51000, // existing fields kept
+    invoiceDate: "2026-11-01", dueDate: "2026-11-24", ageDays: 10, flagCount: 3, topFlag: { code: "b", severity: "error", message: "blocker" },
+  });
+  expect(Number.isInteger(r.totalCents) && Number.isInteger(r.totalCadCents)).toBe(true);
+  expect(approvalInbox(approver, undefined, "2026-11-05")[0].ageDays).toBe(0); // never negative
+});
+
+test("inbox: no received date falls back to the invoice date; no flags means no top flag; unknown CAD is null", () => {
+  getDb().prepare("UPDATE invoices SET flags = '[]', total_cad_cents = NULL WHERE id = 1").run();
+  expect(approvalInbox(approver, undefined, "2026-11-04")[0]).toMatchObject({ ageDays: 3, flagCount: 0, topFlag: null, totalCadCents: null });
+});
+
+test("inbox: pagination still applies", () => {
+  expect(approvalInbox(approver, { limit: 1, offset: 1 })).toEqual([]);
+});
+
+const addApproved = () =>
+  getDb().exec(`
+    UPDATE vendors SET preferred_payment_method = 'CHEQUE', early_pay_discount = '2/10 net 30' WHERE id = 1;
+    INSERT INTO invoices (id,status,vendor_id,invoice_number,invoice_date,due_date,subtotal_cents,total_cents,currency,requester_id)
+      VALUES (3,'approved',1,'A-3','2026-11-15','2026-12-15',100000,113000,'CAD',1),
+             (4,'approved',1,'A-4','2026-11-15','2026-12-15',5000,5650,'CAD',1);
+    INSERT INTO payments (invoice_id,vendor_id,method,status,paid_at,amount_cents,currency) VALUES (4,1,'EFT','scheduled',NULL,5650,'CAD');`);
+
+test("ready to pay: approved invoices with no payment, method with reason, discount only while the window is open", () => {
+  addApproved();
+  const [r, ...rest] = readyToPay(undefined, "2026-11-20");
+  expect(rest).toEqual([]); // 1 is pending_approval, 4 already has a payment
+  expect(r).toEqual({
+    invoiceId: 3, invoiceNumber: "A-3", vendorName: "Acme", totalCents: 113000, currency: "CAD", dueDate: "2026-12-15",
+    suggestedMethod: { method: "CHEQUE", label: "Cheque", reason: "Vendor's preferred method is Cheque" },
+    earlyPayDiscountCents: 2000, // 2% of the 100000 subtotal, integer cents
+  });
+  expect(readyToPay(undefined, "2026-11-26")[0].earlyPayDiscountCents).toBeNull(); // window closed on the 25th
+});
+
+test("ready to pay: a card-preferring vendor that takes no card falls back to EFT and says why", () => {
+  addApproved();
+  getDb().exec("UPDATE vendors SET preferred_payment_method = 'CARD', accepts_card_payment = 0");
+  expect(readyToPay()[0].suggestedMethod).toMatchObject({ method: "EFT", reason: expect.stringContaining("does not accept card") });
+});
+
+test("ready to pay route: clerk, finance and admin only; paged with a total header", async () => {
+  addApproved();
+  const res = await list(ready, 3);
+  expect(res.headers.get("X-Total-Count")).toBe("1");
+  expect((await res.json())[0].invoiceNumber).toBe("A-3");
+  expect(await (await list(ready, 3, "?offset=1")).json()).toEqual([]);
+  for (const u of [5, 6]) expect((await list(ready, u)).status).toBe(200);
+  for (const u of [1, 4, 7]) expect((await list(ready, u)).status).toBe(403);
+  expect((await list(ready, null)).status).toBe(401);
+});
+
+test("payments list: vendor name, invoice total and plain labels for every status the app lists", async () => {
+  getDb().exec(`INSERT INTO invoices (id,status,vendor_id,invoice_number,invoice_date,total_cents,currency,requester_id) VALUES (5,'paid',1,'A-5','2026-11-01',9000,'CAD',1),(6,'approved',1,'A-6','2026-11-01',7000,'CAD',1);
+    INSERT INTO payments (invoice_id,vendor_id,method,status,amount_cents,currency) VALUES (5,1,'CHEQUE','settled',9000,'CAD'),(6,1,'CARD','outstanding',7000,'CAD');`);
+  const rows = await (await list(payments, 7)).json();
+  expect(rows).toHaveLength(2); // outstanding rows are not listed, as before
+  expect(rows[0]).toMatchObject({ vendorName: "Acme", invoiceTotalCents: 50000, method: "EFT", methodLabel: "EFT", status: "scheduled", statusLabel: "Scheduled" });
+  expect(rows[1]).toMatchObject({ methodLabel: "Cheque", statusLabel: "Paid", invoiceTotalCents: 9000 });
+});
+
+test("detail: top-level vendor and money fields, flags ordered by severity, named chain steps and plain payment labels", async () => {
+  getDb().prepare("UPDATE invoices SET flags = ? WHERE id = 1").run(JSON.stringify([{ code: "i", message: "m", severity: "info" }, { code: "e", message: "m", severity: "error" }]));
+  getDb().prepare("UPDATE approval_steps SET delegated_from_id = 5 WHERE invoice_id = 1").run();
+  const d = await (await get(detail, 3)).json();
+  expect(d).toMatchObject({ vendorId: 1, vendorName: "Acme", totalCents: 50000, currency: "CAD", dueDate: "2026-11-24", status: "pending_approval" });
+  expect(d.flags.map((f: { severity: string }) => f.severity)).toEqual(["error", "info"]);
+  expect(d.approvalChain[0]).toMatchObject({ userId: 4, actorName: "Appr", roleLabel: "Department manager", delegatedFromName: "Fin" });
+  expect(d.approvalChain.at(-1).delegatedFromName).toBe("Fin");
+  expect(d.payments[0]).toMatchObject({ methodLabel: "EFT", statusLabel: "Scheduled" });
 });
