@@ -19,3 +19,33 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+
+  automerge:
+    needs: test
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft && startsWith(github.head_ref, 'fm/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Check the merge rules, then squash-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          skip() {
+            gh api "repos/$REPO/issues/$PR/comments" -f body="Auto-merge skipped: $1. A human needs to look at this one."
+            exit 0
+          }
+          files=$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')
+          if echo "$files" | grep -qE '^(AGENTS\.md|CLAUDE\.md|README\.md|docs/|src/contracts\.ts|package\.json|package-lock\.json|\.github/)'; then
+            skip "it changes lead-owned files (rules, docs, contracts, package files or workflows)"
+          fi
+          size=$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" --jq '[.[] | .additions + .deletions] | add')
+          if [ "${size:-0}" -gt 400 ]; then skip "it changes $size lines, over the 400 limit"; fi
+          body=$(gh api "repos/$REPO/pulls/$PR" --jq '.body // ""')
+          echo "$body" | grep -q '## Plain English' || skip "the description has no Plain English section"
+          echo "$body" | grep -q '## Judge question' || skip "the description has no Judge question section"
+          gh api -X PUT "repos/$REPO/pulls/$PR/merge" -f merge_method=squash
