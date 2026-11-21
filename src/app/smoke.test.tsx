@@ -25,6 +25,7 @@ const DATA: Record<string, unknown> = {
   "/api/invoices/1/trail": [audit],
   "/api/approvals/inbox": [{ invoiceId: 1, stepNo: 1, role: "approver", reason: "Manager", invoiceNumber: "INV-1", totalCents: 10500, currency: "CAD", delegatedFromId: null }],
   "/api/exceptions": [{ id: 1, invoiceNumber: "INV-1", vendorId: 3, totalCents: 10500, currency: "CAD", flags: [flag] }],
+  "/api/reconciliation": { summary: { matched: 7, payment_unmatched: 1, payment_ambiguous: 0, amount_diff: 2, duplicate: 0, bank_no_payment: 0, card_no_payment: 0 }, total: 1, rows: [{ category: "matched", paymentId: 9, invoiceNumber: "INV-1", vendor: "Acme Freight", method: "EFT", paymentCents: 12345, lineSource: "bank", lineId: "B1", lineText: "ACME FREIGHT EFT", lineDate: "2026-12-01", lineCents: 12345, diffCents: null, note: "" }] },
   "/api/payments": [payment],
   "/api/payments/cheques": { cheques: [{ paymentId: 9, invoiceNumber: "INV-1", vendor: "Acme Freight", address: "1 Main St", amountCents: 100, currency: "CAD", reference: "PAY-9" }] },
   "/api/vendors": [vendor],
@@ -62,11 +63,12 @@ import Rules from "./admin/approval-rules/page";
 import Inbox, { tabOf } from "./inbox/page";
 import Upload from "./upload/page";
 import Reports from "./reports/page";
+import Reconciliation from "./reconciliation/page";
 import { groupByCode } from "./exceptions/page";
 import { runBatch, type Row } from "@/components/BatchUpload";
 
 const PAGES: [string, () => ReactNode, string][] = [
-  ["login", Login, "Priya"],
+  ["login", Login, "Password"],
   ["dashboard", Dashboard, "2,500.00"],
   ["invoices", Invoices, "INV-1"],
   ["invoice detail", InvoiceDetail, "Dana Approver"],
@@ -80,6 +82,7 @@ const PAGES: [string, () => ReactNode, string][] = [
   ["inbox", Inbox, "Invoice emails"],
   ["upload", Upload, "Drag invoice files here"],
   ["reports", Reports, "9,876.54"],
+  ["reconciliation", Reconciliation, "ACME FREIGHT EFT"],
 ];
 
 test.each(PAGES)("%s page renders its data", (_name, Page, expected) => {
