@@ -1,13 +1,24 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import { Empty, StatusBadge, Table, ymd } from "@/components/ui";
-import { download, Load, money, Notice, post, useApi } from "@/components/api";
-import { Icon } from "@/components/icons";
+import { download, Load, money, post, useApi } from "@/components/api";
+import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
 import RoleHome from "@/components/RoleHome";
 import type { MeResponse, Role } from "@/contracts";
 
-type Pay = { id: number; invoiceId: number; invoiceNumber: string; method: string; status: string; scheduledDate: string | null; paidAt: string | null; amountCents: number; currency: string; reference: string | null };
+type Pay = { id: number; invoiceId: number; invoiceNumber: string; vendorName: string | null; method: string; methodLabel: string; status: string; scheduledDate: string | null; paidAt: string | null; amountCents: number; currency: string; reference: string | null };
 type Cheque = { paymentId: number; invoiceNumber: string; vendor: string | null; address: string | null; amountCents: number; currency: string; reference: string | null };
+
+// One row's Release: the confirm step names the amount, payee, method and date; the server still refuses a second release (409).
+function Release({ p, a }: { p: Pay; a: ReturnType<typeof useActions> }) {
+  const payee = p.vendorName ?? "unknown vendor";
+  const amount = money(p.amountCents, p.currency);
+  return (
+    <ConfirmAction icon="paid" label="Release" busyLabel="Releasing…" ariaLabel={`Release payment ${p.id} to ${payee}`} busy={a.busyKey === `release-${p.id}`} locked={a.locked}
+      title={`Confirm release of payment ${p.id}`} facts={[["Amount", amount], ["Payee", payee], ["Method", p.methodLabel], ["Scheduled", ymd(p.scheduledDate)]]} confirmLabel={`Release ${amount} to ${payee} via ${p.methodLabel}`}
+      onConfirm={(_, key) => a.run(`release-${p.id}`, () => post("/api/payments/release", { paymentId: p.id }, { "idempotency-key": key }), `Payment ${p.id} released: ${amount} to ${payee} via ${p.methodLabel}`)} />
+  );
+}
 
 // GET /api/payments, /api/payments/cheques, /api/payments/eft-file; POST /api/payments/prepare and /release.
 export default function PaymentsPage() {
@@ -15,18 +26,13 @@ export default function PaymentsPage() {
   // Hiding is for looks; the server answers 403 to anything the role may not do.
   const role = useApi<MeResponse>("/api/me").data?.user.role;
   const can = (...r: Role[]) => !!role && r.includes(role);
-  const [msg, setMsg] = useState<{ ok?: string; error?: string }>({});
-
-  async function act(url: string, body: unknown, done: string) {
-    const r = await post(url, body);
-    setMsg(r.error ? { error: r.error } : { ok: done });
-    if (!r.error) setVersion((v) => v + 1);
-  }
+  const a = useActions(() => setVersion((v) => v + 1));
   function prepare(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const method = String(f.get("method"));
-    act("/api/payments/prepare", { invoiceId: Number(f.get("invoiceId")), ...(method ? { method } : {}) }, "Payment prepared");
+    const body = { invoiceId: Number(f.get("invoiceId")), ...(method ? { method } : {}) };
+    a.run("prepare", () => post("/api/payments/prepare", body, { "idempotency-key": crypto.randomUUID() }), "Payment prepared");
   }
 
   return (
@@ -38,19 +44,22 @@ export default function PaymentsPage() {
         <label>Method{" "}
           <select name="method"><option value="">Vendor default</option><option>EFT</option><option>CHEQUE</option><option>CARD</option></select>
         </label>
-        <button type="submit"><Icon name="paid" />Prepare payment</button>
+        <ActionButton submit icon="paid" label="Prepare payment" busyLabel="Preparing…" busy={a.busyKey === "prepare"} locked={a.locked} />
       </form>}
-      <Notice {...msg} />
+      {a.show("prepare")}
       <Load<Pay[]> url={`/api/payments?v=${version}`}>
         {(rows) => rows.length === 0 ? <Empty href="/invoices" next="Find an approved invoice">No payments yet. Prepare one from an approved invoice.</Empty> : (
           <Table>
-            <thead><tr><th>#</th><th>Invoice</th><th>Method</th><th>Status</th><th>Scheduled</th><th className="num">Amount</th><th>Reference</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Invoice</th><th>Vendor</th><th>Method</th><th>Status</th><th className="num">Scheduled</th><th className="num">Amount</th><th>Reference</th><th></th></tr></thead>
             <tbody>
               {rows.map((p) => (
                 <tr key={p.id}>
-                  <td>{p.id}</td><td>{p.invoiceNumber}</td><td>{p.method}</td><td><StatusBadge status={p.status} /></td><td>{ymd(p.scheduledDate)}</td>
+                  <td>{p.id}</td><td className="nowrap">{p.invoiceNumber}</td><td>{p.vendorName ?? "—"}</td><td>{p.methodLabel}</td><td><StatusBadge status={p.status} /></td><td className="num">{ymd(p.scheduledDate)}</td>
                   <td className="num">{money(p.amountCents, p.currency)}</td><td>{p.reference ?? ""}</td>
-                  <td>{p.status === "scheduled" && can("finance_manager", "controller_admin") && <button onClick={() => act("/api/payments/release", { paymentId: p.id }, `Payment ${p.id} released`)}><Icon name="paid" />Release</button>}</td>
+                  <td>
+                    {p.status === "scheduled" && can("finance_manager", "controller_admin") && <Release p={p} a={a} />}
+                    {a.show(`release-${p.id}`)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -59,7 +68,11 @@ export default function PaymentsPage() {
       </Load>
       {can("finance_manager", "controller_admin", "auditor") && <>
       <h2>EFT file</h2>
-      <p><button onClick={async () => setMsg({ error: await download("/api/payments/eft-file", "eft-file.csv") })}><Icon name="download" />Download EFT file (released EFT payments)</button></p>
+      <p>
+        <ActionButton icon="download" label="Download EFT file (released EFT payments)" busyLabel="Preparing file…" busy={a.busyKey === "eft"} locked={a.locked}
+          onClick={() => a.run("eft", async () => ({ error: await download("/api/payments/eft-file", "eft-file.csv") }), "EFT file downloaded")} />
+      </p>
+      {a.show("eft")}
       <h2>Cheques to print</h2>
       <Load<{ cheques: Cheque[] }> url={`/api/payments/cheques?v=${version}`}>
         {({ cheques }) =>
