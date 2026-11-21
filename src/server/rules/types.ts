@@ -42,7 +42,9 @@ export type ReleaseTier = { upToCents: number | null; roles: readonly string[] }
 export type ReleaseUser = { id: number; role: string };
 // amountCadCents is what the tiers compare; approverIds are everyone who approved the invoice.
 export type ReleasePayment = { amountCadCents: number; approverIds: readonly number[]; preparedBy: number | null };
-export type ReleaseResult = { allowed: true } | { allowed: false; reason: string };
+// code is the machine-readable cause (the replay groups by it); reason is the sentence a person reads.
+export type ReleaseDenial = "role" | "amount" | "no_tier" | "size" | "approver" | "preparer";
+export type ReleaseResult = { allowed: true } | { allowed: false; reason: string; code: ReleaseDenial };
 
 // Bank-detail change check inputs.
 export type BankDetails = { accountNumber: string; routingNumber?: string };

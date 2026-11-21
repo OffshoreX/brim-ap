@@ -34,6 +34,7 @@ describe('routeApprovalChain', () => {
   });
   it('Legal vendor adds finance manager at any amount', () => expect(ids(run(100, { vendor: { ...vendor, category: 'Legal' } }))).toEqual(['mgr', 'fin']));
   it('pending_review vendor adds finance manager', () => expect(ids(run(100, { vendor: { ...vendor, status: 'pending_review' } }))).toEqual(['mgr', 'fin']));
+  it('on_hold vendor adds finance manager (T45 replay: history does the same)', () => expect(ids(run(100, { vendor: { ...vendor, status: 'on_hold' } }))).toEqual(['mgr', 'fin']));
   it('new vendor (60 days) adds finance manager; 61 days does not', () => {
     expect(ids(run(100, { vendor: { ...vendor, onboardedAt: '2026-09-21' } }))).toEqual(['mgr', 'fin']);
     expect(ids(run(100, { vendor: { ...vendor, onboardedAt: '2026-09-20' } }))).toEqual(['mgr']);

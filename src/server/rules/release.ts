@@ -8,16 +8,16 @@ const NEVER_RELEASE = ["ap_clerk", "approver"];
 
 // Limits come in as `tiers` (from approval policy P09/P10), so no amount is written in this file.
 export function canRelease(user: ReleaseUser, payment: ReleasePayment, tiers: readonly ReleaseTier[]): ReleaseResult {
-  if (NEVER_RELEASE.includes(user.role)) return { allowed: false, reason: `Role ${user.role} cannot release payments` };
+  if (NEVER_RELEASE.includes(user.role)) return { allowed: false, reason: `Role ${user.role} cannot release payments`, code: "role" };
   if (!Number.isInteger(payment.amountCadCents) || payment.amountCadCents <= 0) {
-    return { allowed: false, reason: "Payment amount must be a positive whole number of cents" };
+    return { allowed: false, reason: "Payment amount must be a positive whole number of cents", code: "amount" };
   }
   const tier = tiers.find((t) => t.upToCents === null || payment.amountCadCents <= t.upToCents);
-  if (!tier) return { allowed: false, reason: "No release tier covers this amount" };
-  if (!tier.roles.includes(user.role)) return { allowed: false, reason: `Role ${user.role} cannot release a payment of this size` };
+  if (!tier) return { allowed: false, reason: "No release tier covers this amount", code: "no_tier" };
+  if (!tier.roles.includes(user.role)) return { allowed: false, reason: `Role ${user.role} cannot release a payment of this size`, code: "size" };
   // P11: separation of duties.
-  if (payment.approverIds.includes(user.id)) return { allowed: false, reason: "You approved this invoice, so you cannot release its payment" };
-  if (payment.preparedBy === user.id) return { allowed: false, reason: "You prepared this payment, so you cannot release it" };
+  if (payment.approverIds.includes(user.id)) return { allowed: false, reason: "You approved this invoice, so you cannot release its payment", code: "approver" };
+  if (payment.preparedBy === user.id) return { allowed: false, reason: "You prepared this payment, so you cannot release it", code: "preparer" };
   return { allowed: true };
 }
 
