@@ -1,13 +1,19 @@
-import { INVOICE_STATUSES, type InvoiceStatus } from "../contracts";
+import { INVOICE_STATUSES as CONTRACT_STATUSES } from "../contracts";
 import { writeAudit } from "./audit";
 import { getDb } from "./db";
+
+// contracts.ts (lead-owned) does not list "scheduled" yet; once it does, import its list and type instead.
+export const INVOICE_STATUSES = [...CONTRACT_STATUSES, "scheduled"] as const;
+export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
 // The whole status flow in one table; anything not listed is forbidden.
 const ALLOWED: Record<InvoiceStatus, InvoiceStatus[]> = {
   received: ["needs_review", "pending_approval", "rejected"],
   needs_review: ["pending_approval", "rejected"],
   pending_approval: ["approved", "rejected"],
-  approved: ["paid"],
+  // approved -> paid stays until the release flow is rebuilt on top of scheduled.
+  approved: ["scheduled", "paid"],
+  scheduled: ["paid"],
   rejected: [],
   paid: [],
 };

@@ -41,7 +41,7 @@ beforeEach(() => {
       (1,'Emp','employee',0),(2,'Clerk','ap_clerk',0),(3,'Appr','approver',100000000),(4,'Aud','auditor',0);
     INSERT INTO approval_rules (min_cents,max_cents,approver_role) VALUES (0,1000000000,'approver');
     INSERT INTO vendors (id,name) VALUES (1,'ACME Freight Inc');
-    INSERT INTO vendor_bank_history (vendor_id,bank_details,changed_at) VALUES (1,'123456 00011','2025-01-01T00:00:00Z');
+    INSERT INTO vendor_bank_changes (vendor_id,changed_at,old_account_last4,new_account_last4) VALUES (1,'2025-01-01','9999','0011');
   `);
 });
 

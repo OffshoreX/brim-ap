@@ -1,13 +1,21 @@
 -- Money columns elsewhere are integer cents; approval_limit_cents follows that rule.
+-- ext_id keeps the dataset's original id (U001); our id is its number part.
+-- on_leave is now status = 'on_leave'; delegate_id is now delegate_user_id.
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
+  ext_id TEXT UNIQUE,
   name TEXT NOT NULL,
+  email TEXT,
+  title TEXT,
+  department_id INTEGER REFERENCES departments(id),
   role TEXT NOT NULL CHECK (role IN ('employee','ap_clerk','approver','finance_manager','controller_admin','auditor')),
   manager_id INTEGER REFERENCES users(id),
   approval_limit_cents INTEGER NOT NULL DEFAULT 0,
   province TEXT,
-  on_leave INTEGER NOT NULL DEFAULT 0 CHECK (on_leave IN (0,1)),
-  delegate_id INTEGER REFERENCES users(id)
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','on_leave','terminated')),
+  status_since TEXT,
+  delegate_user_id INTEGER REFERENCES users(id),
+  hire_date TEXT
 );
 
 -- before/after hold JSON text so any entity can be logged by one table.

@@ -6,7 +6,9 @@ import path from "node:path";
 const file = process.env.DB_PATH || "data/app.db";
 fs.mkdirSync(path.dirname(file), { recursive: true });
 const db = new Database(file);
-db.exec(fs.readFileSync("db/schema.sql", "utf8"));
+// Same order as applySchema in src/server/db.ts: schema.sql first, then the rest alphabetically.
+for (const f of ["schema.sql", ...fs.readdirSync("db").filter((f) => f.endsWith(".sql") && f !== "schema.sql").sort()])
+  db.exec(fs.readFileSync(path.join("db", f), "utf8"));
 
 const users = [
   [1, "Erin Employee", "employee", 4, 0, "QC"],
