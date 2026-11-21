@@ -2,6 +2,7 @@ import type { User } from "@/contracts";
 import { writeAudit } from "./audit";
 import { getDb } from "./db";
 import { DEFAULT_PAGE, type Page } from "./paging";
+import { createChain } from "./approvals";
 import { transition } from "./invoiceStatus";
 import { bankDiffers, readInvoiceBank } from "./rules/bank";
 
@@ -84,6 +85,15 @@ export function resolveException(user: User, invoiceId: number, action: ResolveA
     if (action === "send_to_approval" && parseFlags(row.flags).some((f) => f.code === "bank_details_differ") && bankStillDiffers(invoiceId, row.extraction_json))
       throw new ExceptionError(409, "The invoice's bank account differs from the vendor's. A finance user must verify a bank change first.");
     const status = action === "reject" ? ("rejected" as const) : ("pending_approval" as const);
+    // A held invoice was never routed (errors stop routing), so build its chain now; without one nobody could approve it.
+    // If nobody can fill a step, the whole resolve rolls back and the invoice stays held.
+    if (action === "send_to_approval" && !db.prepare("SELECT 1 FROM approval_steps WHERE invoice_id = ?").get(invoiceId)) {
+      try {
+        createChain(invoiceId, user.id);
+      } catch (e) {
+        throw new ExceptionError(409, `Cannot route this invoice for approval: ${e instanceof Error ? e.message : "unknown reason"}`);
+      }
+    }
     transition(invoiceId, status, user.id);
     writeAudit({
       actorId: user.id,

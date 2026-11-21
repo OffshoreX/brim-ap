@@ -16,11 +16,15 @@ beforeEach(() => {
      (1,'Ann','approver',0),(2,'Emp','employee',0),(3,'Clerk','ap_clerk',0)`
   ).run();
   db.prepare("INSERT INTO vendors (id,name) VALUES (1,'Acme')").run();
+  // Routable: the requester (Emp) sits in a department managed by Ann, and the three chain thresholds exist.
+  db.prepare("INSERT INTO departments (id,name,manager_user_id) VALUES (1,'Ops',1)").run();
+  db.prepare("UPDATE users SET department_id = 1, manager_id = 1 WHERE id = 2").run();
+  db.prepare("INSERT INTO approval_rules (policy_id,over_cents,extra_role) VALUES ('P2',1000000,'finance_manager'),('P3',5000000,'controller_admin'),('P4',20000000,'cfo')").run();
   db.prepare(
-    `INSERT INTO invoices (id,status,vendor_id,invoice_number,invoice_date,total_cents,currency,flags) VALUES
-     (1,'needs_review',1,'INV-1','2026-01-01',100,'CAD','[{"code":"duplicate","message":"Same vendor and number as #9"}]'),
-     (2,'needs_review',1,'INV-2','2026-01-01',200,'CAD','["bad_tax"]'),
-     (3,'pending_approval',1,'INV-3','2026-01-01',300,'CAD','[]')`
+    `INSERT INTO invoices (id,status,vendor_id,requester_id,invoice_number,invoice_date,total_cents,currency,flags) VALUES
+     (1,'needs_review',1,2,'INV-1','2026-01-01',100,'CAD','[{"code":"duplicate","message":"Same vendor and number as #9"}]'),
+     (2,'needs_review',1,2,'INV-2','2026-01-01',200,'CAD','["bad_tax"]'),
+     (3,'pending_approval',1,2,'INV-3','2026-01-01',300,'CAD','[]')`
   ).run();
 });
 
@@ -93,4 +97,14 @@ test("bank_details_differ: rejecting is always allowed, and an unreadable invoic
   db.prepare("UPDATE invoices SET flags = ?, extraction_json = 'not json' WHERE id IN (1,2)").run('[{"code":"bank_details_differ","message":"x"}]');
   expect((await post(3, 1, { action: "send_to_approval", note: "x" })).status).toBe(409);
   expect((await post(3, 2, { action: "reject", note: "x" })).status).toBe(200);
+});
+
+// A held invoice was never routed; sending it to approval must give it a chain, and one nobody can fill must stay held.
+test("send_to_approval builds the approval chain, and stays held when no one can fill it", async () => {
+  expect((await post(3, 1, { action: "send_to_approval", note: "ok" })).status).toBe(200);
+  expect(getDb().prepare("SELECT user_id, status FROM approval_steps WHERE invoice_id = 1").all()).toEqual([{ user_id: 1, status: "pending" }]);
+  getDb().prepare("DELETE FROM approval_rules").run(); // no thresholds: the chain cannot be built
+  const refused = await post(3, 2, { action: "send_to_approval", note: "ok" });
+  expect(refused.status).toBe(409);
+  expect((getDb().prepare("SELECT status FROM invoices WHERE id=2").get() as { status: string }).status).toBe("needs_review");
 });
