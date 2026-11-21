@@ -22,6 +22,7 @@ export const MATRIX: [string, string, Access][] = [
   ["invoices/counts",                    "GET",   ALL],
   ["invoices/[id]",                      "GET",   ALL],
   ["invoices/[id]/trail",                "GET",   ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
+  ["invoices/[id]/process-log",          "GET",   ALL], // same visibility as the invoice (employee: own, approver: has a step)
   ["invoices/[id]/decision",             "POST",  APPROVERS],
   ["invoices/[id]/lines/[lineId]/coding", "PATCH", CLERK_UP],
   ["invoices/[id]/process",              "POST",  ["ap_clerk", "controller_admin"]],
@@ -50,6 +51,7 @@ export const MATRIX: [string, string, Access][] = [
   ["reconciliation",                    "POST",  ["finance_manager", "controller_admin"]], // saves each payment's status (audited)
   ["audit",                              "GET",   ["auditor", "controller_admin", "finance_manager"]], // also ?format=csv
   ["audit/verify",                       "GET",   ["auditor", "controller_admin"]],
+  ["process-log",                        "GET",   ["ap_clerk", "finance_manager", "controller_admin", "auditor"]], // ?limit=
   ["admin/ping",                         "GET",   ["controller_admin"]],
   ["admin/approval-rules",               "GET",   ["controller_admin"]],
   ["admin/approval-rules/[id]",          "PUT",   ["controller_admin"]],
