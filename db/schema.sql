@@ -5,7 +5,9 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK (role IN ('employee','ap_clerk','approver','finance_manager','controller_admin','auditor')),
   manager_id INTEGER REFERENCES users(id),
   approval_limit_cents INTEGER NOT NULL DEFAULT 0,
-  province TEXT
+  province TEXT,
+  on_leave INTEGER NOT NULL DEFAULT 0 CHECK (on_leave IN (0,1)),
+  delegate_id INTEGER REFERENCES users(id)
 );
 
 -- before/after hold JSON text so any entity can be logged by one table.
