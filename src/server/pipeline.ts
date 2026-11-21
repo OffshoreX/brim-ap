@@ -19,6 +19,7 @@ import { checkPaymentTerms, dueDateFor, parseEarlyPayTerms } from "./rules/payme
 import { checkPoMatch } from "./rules/po";
 import { findSplitInvoices } from "./rules/split";
 import { checkTax, type TaxCodeRate, type TaxLine } from "./rules/tax";
+import { checkVendorStatus } from "./rules/vendorStatus";
 import type { Finding } from "./rules/types";
 import { matchVendor } from "./rules/vendorMatch";
 
@@ -47,11 +48,11 @@ const SPLIT_WINDOW_DAYS = 7;
 
 type Db = ReturnType<typeof getDb>;
 type Vendor = {
-  id: number; name: string; requires_po: number | null;
+  id: number; name: string; status: string | null; requires_po: number | null;
   bank_institution: string | null; bank_transit: string | null; bank_account: string | null; bank_details_updated_at: string | null;
   payment_terms_days: number | null; early_pay_discount: string | null;
 };
-type ContractRow = {
+export type ContractRow = {
   id: number; billing_type: BillingContract["billingType"]; currency: string; start_date: string; end_date: string; status: string | null;
   monthly_fee_cents: number | null; hourly_rate_cap_cents: number | null; fuel_surcharge_cap_pct: number | null; not_to_exceed_monthly_cents: number | null;
 };
@@ -62,7 +63,7 @@ const digitsOf = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
 const alnum = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 // Only USD->CAD exists in the data (fx_rates, one row per day); any other pair is refused, never guessed.
-const rateFor = (db: Db): RateFor => (from, to, date) => {
+export const rateFor = (db: Db): RateFor => (from, to, date) => {
   if (from !== "USD" || to !== "CAD") return undefined;
   const r = db.prepare("SELECT usd_to_cad_bps AS bps FROM fx_rates WHERE date = ?").get(date) as { bps: number } | undefined;
   return r && { from, to, rateBps: r.bps };
@@ -108,27 +109,31 @@ function taxFindings(db: Db, x: ExtractedInvoice, vendorId: number, invoiceId: n
 }
 
 // The contract in force on the invoice date; else the latest one, so the rule reports it expired. A vendor with no contract has none to check.
-function pickContract(db: Db, vendorId: number, date: string): ContractRow | null {
+export function pickContract(db: Db, vendorId: number, date: string): ContractRow | null {
   const rows = db.prepare("SELECT * FROM contracts WHERE vendor_id = ? ORDER BY end_date DESC").all(vendorId) as ContractRow[];
   return rows.find((r) => r.status !== "expired" && r.start_date <= date && date <= r.end_date) ?? rows[0] ?? null;
 }
 
-function contractFindings(db: Db, c: ContractRow, x: ExtractedInvoice, vendorId: number, invoiceId: number, subtotalCents: number): Finding[] {
-  const contract: BillingContract = {
-    billingType: c.billing_type, currency: c.currency, startDate: c.start_date, endDate: c.end_date, status: c.status ?? undefined,
-    monthlyFeeCents: c.monthly_fee_cents ?? undefined, hourlyRateCapCents: c.hourly_rate_cap_cents ?? undefined,
-    fuelSurchargeCapBps: c.fuel_surcharge_cap_pct === null ? undefined : Math.round(c.fuel_surcharge_cap_pct * 100), // 12 (%) -> 1200
-    notToExceedMonthlyCents: c.not_to_exceed_monthly_cents ?? undefined,
-  };
-  // What a line is comes from its description here; the rule never guesses.
-  const lines: BillingLine[] = x.lines.map((l) => ({
+// contracts.csv row -> what the rule takes. fuel_surcharge_cap_pct is 12 (%), the rule wants basis points (1200).
+export const toBillingContract = (c: ContractRow): BillingContract => ({
+  billingType: c.billing_type, currency: c.currency, startDate: c.start_date, endDate: c.end_date, status: c.status ?? undefined,
+  monthlyFeeCents: c.monthly_fee_cents ?? undefined, hourlyRateCapCents: c.hourly_rate_cap_cents ?? undefined,
+  fuelSurchargeCapBps: c.fuel_surcharge_cap_pct === null ? undefined : Math.round(c.fuel_surcharge_cap_pct * 100),
+  notToExceedMonthlyCents: c.not_to_exceed_monthly_cents ?? undefined,
+});
+
+// What a line is comes from its description here; the rule never guesses.
+export const billingLines = (lines: { description: string; amountCents: number; unitPriceCents: number }[]): BillingLine[] =>
+  lines.map((l) => ({
     kind: /fuel/i.test(l.description) ? "fuel_surcharge" : /\bhours?\b|\bhrs?\b/i.test(l.description) ? "hourly" : "other",
     amountCents: l.amountCents, unitPriceCents: l.unitPriceCents,
   }));
+
+function contractFindings(db: Db, c: ContractRow, x: ExtractedInvoice, vendorId: number, invoiceId: number, subtotalCents: number): Finding[] {
   const month = db
     .prepare("SELECT invoice_date AS date, currency, subtotal_cents AS subtotalCents FROM invoices WHERE vendor_id = ? AND id != ? AND substr(invoice_date,1,7) = substr(?,1,7) AND subtotal_cents > 0 AND status != 'rejected'")
     .all(vendorId, invoiceId, x.invoiceDate) as { date: string; currency: string; subtotalCents: number }[];
-  return checkContractByBilling({ date: x.invoiceDate, currency: x.currency, subtotalCents, lines }, contract, month, rateFor(db));
+  return checkContractByBilling({ date: x.invoiceDate, currency: x.currency, subtotalCents, lines: billingLines(x.lines) }, toBillingContract(c), month, rateFor(db));
 }
 
 // PO amounts in the data are before tax, so the subtotal is what gets compared.
@@ -170,7 +175,7 @@ function creditFindings(db: Db, x: ExtractedInvoice, vendorId: number, invoiceId
 
 // Only money that left outside our own records counts: a bank or card line that one of our payments explains is not a second payment.
 // ponytail: "explains" = same CAD amount paid within 3 days; an unrelated payment that clashes would hide a real duplicate.
-function crossFindings(db: Db, vendor: Vendor, invoiceId: number, date: string, cadCents: number): Finding[] {
+export function crossFindings(db: Db, vendor: Vendor, invoiceId: number, date: string, cadCents: number): Finding[] {
   // Columns are table-qualified: unqualified, `amount_cad_cents` would bind to payments.amount_cad_cents inside the subquery and match every payment.
   const unexplained = (amount: string, posted: string) =>
     `NOT EXISTS (SELECT 1 FROM payments p WHERE p.amount_cad_cents = ${amount} AND p.paid_at IS NOT NULL AND ABS(julianday(substr(p.paid_at,1,10)) - julianday(${posted})) <= 3)`;
@@ -209,7 +214,8 @@ async function extract(file: string | null): Promise<ExtractResult> {
   try {
     if (!file) return { status: "needs_review", reason: "invoice has no stored file" };
     const bytes = fs.readFileSync(file);
-    return await extractInvoice(bytes, MIME[path.extname(file).slice(1)] ?? "");
+    // EXTRACT_CACHE_DIR lets scripts/mess-report.mjs read cached answers from elsewhere; unset means the default cache.
+    return await extractInvoice(bytes, MIME[path.extname(file).slice(1)] ?? "", { cacheDir: process.env.EXTRACT_CACHE_DIR || undefined });
   } catch (e) {
     return { status: "needs_review", reason: e instanceof Error ? e.message : "extraction failed" };
   }
@@ -251,7 +257,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     // Vendor match (rules/vendorMatch.ts). The name decides first, so a tax id that disagrees with the named vendor is caught, not trusted.
     // Only when the name finds no one is the tax id (digits only) used to pick the vendor.
     const vendors = db
-      .prepare("SELECT id, name, gst_hst_number AS taxNumber, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at, payment_terms_days, early_pay_discount FROM vendors")
+      .prepare("SELECT id, name, status, gst_hst_number AS taxNumber, requires_po, bank_institution, bank_transit, bank_account, bank_details_updated_at, payment_terms_days, early_pay_discount FROM vendors")
       .all() as (Vendor & { taxNumber: string | null })[];
     const taxDigits = digitsOf(x.vendorTaxId);
     let match = matchVendor(x.vendorName, vendors);
@@ -269,6 +275,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     const vendorTax = digitsOf(vendor?.taxNumber);
     if (vendor && taxDigits && vendorTax && taxDigits !== vendorTax)
       flags.push(error("vendor_taxid_mismatch", `Tax id ${x.vendorTaxId} on the invoice differs from the one on file for "${vendor.name}"`));
+    if (vendor) flags.push(...checkVendorStatus(vendor.status));
     if (match.status === "none") flags.push(error("vendor_unmatched", `No vendor named "${x.vendorName}"`));
     if (match.status === "ambiguous") flags.push(error("vendor_ambiguous", `${match.ids.length} vendors match "${x.vendorName}"`));
     // Matched, but only after ignoring formatting: say so, so a clerk can see which record was used.
