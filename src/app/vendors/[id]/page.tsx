@@ -4,9 +4,10 @@ import { useParams } from "next/navigation";
 import { Table, ymd } from "@/components/ui";
 import { Load, post } from "@/components/api";
 import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
+import { bankChangeStatus, humanise, vendorStatus } from "@/components/labels";
 import { CAN_CLERK, CAN_RELEASE, useCan, useCurrentUser } from "@/components/CurrentUser";
 
-type Change = { id: number; changed_at: string; changed_by_user_id: number | null; request_channel: string | null; status: string; old_account_last4: string | null; new_account_last4: string | null; verified_by_user_id: number | null; verified_by_callback: number; verified_at: string | null };
+type Change = { id: number; changed_at: string; changed_by_user_id: number | null; request_channel: string | null; status: string; old_account_last4: string | null; new_account_last4: string | null; verified_by_user_id: number | null; verified_by_callback: number; verified_at: string | null; verifierName?: string | null };
 type Vendor = { id: number; name: string; category: string | null; status: string | null; address: string | null; province_or_state: string | null; payment_terms_days: number | null; preferred_payment_method: string | null; bank_account_last4: string; bankChanges: Change[] };
 
 // GET /api/vendors/{id}; POST /api/vendors/{id}/bank-change and /bank-change/verify.
@@ -27,14 +28,13 @@ export default function VendorPage() {
 
   return (
     <main id="main">
-      <h1>Vendor {id}</h1>
-      <Load<Vendor> url={`/api/vendors/${id}?v=${version}`}>
+      <Load<Vendor> url={`/api/vendors/${id}?v=${version}`} heading={(v) => <>{v?.name ?? `Vendor ${id}`}</>}>
         {(v) => {
           const acct = (c: Change) => [["Vendor", v.name], ["Account now", `…${c.old_account_last4}`], ["Account after", `…${c.new_account_last4}`]] as [string, string][];
           return (
           <>
             <Table><tbody>
-              <tr><th>Name</th><td>{v.name}</td></tr><tr><th>Category</th><td>{v.category}</td></tr><tr><th>Status</th><td>{v.status}</td></tr>
+              <tr><th>Name</th><td>{v.name}</td></tr><tr><th>Category</th><td>{v.category}</td></tr><tr><th>Status</th><td>{vendorStatus(v.status)}</td></tr>
               <tr><th>Address</th><td>{v.address}</td></tr><tr><th>Province</th><td>{v.province_or_state}</td></tr>
               <tr><th>Terms (days)</th><td>{v.payment_terms_days}</td></tr><tr><th>Preferred method</th><td>{v.preferred_payment_method}</td></tr>
               <tr><th>Bank account</th><td>…{v.bank_account_last4}</td></tr>
@@ -46,8 +46,8 @@ export default function VendorPage() {
               <tbody>
                 {v.bankChanges.map((c) => (
                   <tr key={c.id}>
-                    <td>{ymd(c.changed_at)}</td><td>{c.request_channel}</td><td>…{c.old_account_last4}</td><td>…{c.new_account_last4}</td><td>{c.status}</td>
-                    <td>{c.verified_by_callback ? `Yes, by user ${c.verified_by_user_id} on ${ymd(c.verified_at)}` : c.status === "rejected" ? `Rejected by user ${c.verified_by_user_id}` : "Not verified"}</td>
+                    <td>{ymd(c.changed_at)}</td><td>{c.request_channel ? humanise(c.request_channel) : "—"}</td><td>…{c.old_account_last4}</td><td>…{c.new_account_last4}</td><td>{bankChangeStatus(c.status)}</td>
+                    <td>{c.verified_by_callback ? `Yes, by ${c.verifierName ?? "a finance user"} on ${ymd(c.verified_at)}` : c.status === "rejected" ? `Rejected by ${c.verifierName ?? "a finance user"}` : "Not verified"}</td>
                     <td>
                       {canVerify && c.status === "pending" && (
                         <>

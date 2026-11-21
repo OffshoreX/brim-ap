@@ -1,10 +1,10 @@
 "use client";
 import { useState, type FormEvent } from "react";
-import { Empty, Table, stamp } from "@/components/ui";
+import { Empty } from "@/components/ui";
+import { AuditTable } from "@/components/AuditTable";
+import type { AuditRow } from "@/components/AuditTable";
 import { Load } from "@/components/api";
 import RoleHome from "@/components/RoleHome";
-
-type Row = { id: number; at: string; actorId: number | null; action: string; entity: string; entityId: string | null; before: unknown; after: unknown };
 
 // GET /api/audit?entity=&actor=&from=&to=&limit=
 export default function AuditPage() {
@@ -27,17 +27,9 @@ export default function AuditPage() {
         <input name="limit" type="number" min="1" max="500" placeholder="Limit" aria-label="Limit" />
         <button type="submit">Filter</button>
       </form>
-      <Load<Row[]> url={`/api/audit?${query}`}>
+      <Load<AuditRow[]> url={`/api/audit?${query}`}>
         {(rows) => rows.length === 0 ? <Empty href="/audit" next="Clear the filter">No audit entries match this filter.</Empty> : (
-          <Table>
-            <thead><tr><th>When</th><th>Who</th><th>What</th><th>Entity</th><th>Before</th><th>After</th></tr></thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}><td>{stamp(r.at)}</td><td>{r.actorId ?? "system"}</td><td>{r.action}</td><td>{r.entity} {r.entityId}</td>
-                  <td><code>{JSON.stringify(r.before)}</code></td><td><code>{JSON.stringify(r.after)}</code></td></tr>
-              ))}
-            </tbody>
-          </Table>
+          <AuditTable rows={rows} entity />
         )}
       </Load>
     </main>

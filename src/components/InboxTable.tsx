@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Empty, SeverityChip, Table, ymd } from "./ui";
 import { ActionButton, useActions } from "./actions";
 import { money, post } from "./api";
+import { roleName } from "./labels";
 
 // Shape of GET /api/approvals/inbox rows (src/server/views.ts approvalInbox).
 export type InboxRow = {
@@ -27,10 +28,6 @@ export const sortInbox = (rows: InboxRow[], key: SortKey) => [...rows].sort((a, 
 export const filterInbox = (rows: InboxRow[], f: FlagFilter) => rows.filter((r) => f === "all" || (f === "flagged") === r.flagCount > 0);
 // topFlag is the worst flag (the server sorts most severe first), so an error there means a blocking flag somewhere.
 export const hasErrorFlag = (r: InboxRow) => r.topFlag?.severity === "error";
-
-// Looks only: the plain name for a role token. The server still decides who may approve.
-const ROLE: Record<string, string> = { approver: "Approver", dept_manager: "Department manager", finance_manager: "Finance manager", controller_admin: "Controller", cfo: "CFO" };
-const roleName = (r: string) => ROLE[r] ?? (r.charAt(0).toUpperCase() + r.slice(1).replace(/_/g, " "));
 
 export function InboxTable({ rows, reload }: { rows: InboxRow[]; reload: () => void }) {
   const [sort, setSort] = useState<SortKey>("due");

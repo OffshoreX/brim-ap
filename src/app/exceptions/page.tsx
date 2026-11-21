@@ -2,24 +2,18 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Empty, SeverityChip, Table } from "@/components/ui";
-import { FLAG_TITLE, Load, money, post, type Flag } from "@/components/api";
+import { Load, money, post, type Flag } from "@/components/api";
 import { ActionButton, ConfirmAction, useActions } from "@/components/actions";
+import { flagTitle } from "@/components/labels";
 import { CAN_CLERK, useCan, useCurrentUser } from "@/components/CurrentUser";
 
 type Item = { id: number; invoiceNumber: string; totalCents: number; currency: string; flags: Flag[] };
 
-// One group per flag code; an invoice with two flags shows under both. `severity` is optional because
-// the server only sends code and message today (see PR), so the filter only narrows flags that carry one.
-export function groupByCode(items: Item[], severity: string) {
-  const groups = new Map<string, { code: string; severity?: string; items: Item[] }>();
-  for (const item of items)
-    for (const f of item.flags) {
-      if (severity && f.severity !== severity) continue;
-      const g = groups.get(f.code) ?? { code: f.code, severity: f.severity, items: [] };
-      if (!g.items.includes(item)) g.items.push(item);
-      groups.set(f.code, g);
-    }
-  return [...groups.values()].sort((a, b) => b.items.length - a.items.length);
+// One entry per invoice with all its flags together. `severity` is optional because the server only sends code and
+// message today, so the filter keeps an invoice when any flag matches and shows only that invoice's matching flags.
+export function filterBySeverity(items: Item[], severity: string) {
+  if (!severity) return items;
+  return items.flatMap((i) => { const flags = i.flags.filter((f) => f.severity === severity); return flags.length ? [{ ...i, flags }] : []; });
 }
 
 function ExceptionRow({ item, done }: { item: Item; done: () => void }) {
@@ -33,7 +27,9 @@ function ExceptionRow({ item, done }: { item: Item; done: () => void }) {
     <tr>
       <td><Link href={`/invoices/${item.id}`}>{item.invoiceNumber || item.id}</Link></td>
       <td className="num">{money(item.totalCents, item.currency)}</td>
-      <td>{item.flags.map((f) => (FLAG_TITLE[f.code] ? `${FLAG_TITLE[f.code]}: ${f.message}` : f.message)).join("; ")}</td>
+      <td>
+        <ul className="flags">{item.flags.map((f, i) => <li key={i}>{f.severity && <SeverityChip severity={f.severity} />} <strong>{flagTitle(f.code)}:</strong> {f.message}</li>)}</ul>
+      </td>
       <td>
         {role && !canResolve ? <p className="muted">Only AP clerks, finance managers and controllers can resolve this.</p> : canResolve && <>
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note for approval (required)" aria-label={`Note for invoice ${item.id}`} />
@@ -63,19 +59,12 @@ export default function ExceptionsPage() {
       </label>
       <Load<Item[]> url="/api/exceptions">
         {(items, reload) => {
-          const groups = groupByCode(items, severity);
-          return items.length === 0 ? <Empty href="/invoices" next="Browse all invoices">Nothing needs review right now.</Empty> : groups.length === 0 ? <p>No flags at this severity.</p> : (
-            <>
-              {groups.map((g) => (
-                <section key={g.code}>
-                  <h2><code>{g.code}</code> {FLAG_TITLE[g.code] && <>{FLAG_TITLE[g.code]} </>}{g.severity && <SeverityChip severity={g.severity} />} <small>({g.items.length})</small></h2>
-                  <Table>
-                    <thead><tr><th>Invoice</th><th className="num">Total</th><th>Why flagged</th><th>Resolve</th></tr></thead>
-                    <tbody>{g.items.map((i) => <ExceptionRow key={i.id} item={i} done={reload} />)}</tbody>
-                  </Table>
-                </section>
-              ))}
-            </>
+          const shown = filterBySeverity(items, severity);
+          return items.length === 0 ? <Empty href="/invoices" next="Browse all invoices">Nothing needs review right now.</Empty> : shown.length === 0 ? <p>No flags at this severity.</p> : (
+            <Table>
+              <thead><tr><th>Invoice</th><th className="num">Total</th><th>Why flagged</th><th>Resolve</th></tr></thead>
+              <tbody>{shown.map((i) => <ExceptionRow key={i.id} item={i} done={reload} />)}</tbody>
+            </Table>
           );
         }}
       </Load>

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { Empty, Table } from "@/components/ui";
 import { Load } from "@/components/api";
+import { vendorStatus } from "@/components/labels";
 
 type Vendor = { id: number; name: string; category: string | null; status: string | null; province_or_state: string | null; payment_terms_days: number | null; bank_account_last4: string };
 
@@ -17,7 +18,7 @@ export default function VendorsPage() {
             <tbody>
               {vendors.map((v) => (
                 <tr key={v.id}>
-                  <td><Link href={`/vendors/${v.id}`}>{v.name}</Link></td><td>{v.category}</td><td>{v.status}</td><td>{v.province_or_state}</td>
+                  <td><Link href={`/vendors/${v.id}`}>{v.name}</Link></td><td>{v.category}</td><td>{vendorStatus(v.status)}</td><td>{v.province_or_state}</td>
                   <td className="num">{v.payment_terms_days}</td><td>…{v.bank_account_last4}</td>
                 </tr>
               ))}

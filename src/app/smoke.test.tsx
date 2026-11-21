@@ -7,7 +7,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 const flag = { code: "tax_mismatch", message: "Tax is off", severity: "error" };
 const step = { stepNo: 1, role: "approver", roleLabel: "Approver", userId: 7, userName: "Dana Approver", actorName: "Dana Approver", delegatedFromId: null, delegatedFromName: null, reason: "Manager", status: "pending" };
-const audit = { id: 1, at: "2026-11-21T10:00:00Z", actorId: 4, action: "invoice.upload", entity: "invoice", entityId: "1", before: null, after: { status: "received" } };
+const audit = { id: 1, at: "2026-11-21T10:00:00Z", actorId: 4, actorName: "Dana Clerk", action: "invoice.upload", entity: "invoice", entityId: "1", before: null, after: { status: "received" } };
 const vendor = { id: 3, name: "Acme Freight", category: "Freight", status: "active", address: "1 Main St", province_or_state: "QC", payment_terms_days: 30, preferred_payment_method: "EFT", bank_account_last4: "1234" };
 const payment = { id: 9, invoiceId: 1, invoiceNumber: "INV-1", vendorName: "Acme Freight", method: "EFT", methodLabel: "EFT", status: "scheduled", scheduledDate: "2026-12-01", paidAt: null, amountCents: 12345, currency: "CAD", reference: null };
 
@@ -65,7 +65,7 @@ import Inbox, { tabOf } from "./inbox/page";
 import Upload from "./upload/page";
 import Reports from "./reports/page";
 import Reconciliation from "./reconciliation/page";
-import { groupByCode } from "./exceptions/page";
+import { filterBySeverity } from "./exceptions/page";
 import { runBatch, type Row } from "@/components/BatchUpload";
 
 const PAGES: [string, () => ReactNode, string][] = [
@@ -79,7 +79,7 @@ const PAGES: [string, () => ReactNode, string][] = [
   ["payments ready list", Payments, "INV-READY"],
   ["vendors", Vendors, "Acme Freight"],
   ["vendor detail", VendorDetail, "Callback confirmed"],
-  ["audit", Audit, "invoice.upload"],
+  ["audit", Audit, "Invoice upload"],
   ["approval rules", Rules, "finance_manager"],
   ["inbox", Inbox, "Invoice emails"],
   ["upload", Upload, "Drag invoice files here"],
@@ -121,15 +121,15 @@ test("money text becomes integer cents", () => {
   expect(toCents("-3")).toBeNull();
 });
 
-test("exceptions group by flag code and the severity filter narrows them", () => {
+test("exceptions list each invoice once with all its flags, and the severity filter narrows them", () => {
   const warn = { code: "late_fee", message: "Late fee", severity: "warning" };
   const items = [
     { id: 1, invoiceNumber: "A", totalCents: 1, currency: "CAD", flags: [flag, warn] },
     { id: 2, invoiceNumber: "B", totalCents: 1, currency: "CAD", flags: [flag] },
   ];
-  expect(groupByCode(items, "").map((g) => [g.code, g.items.length])).toEqual([["tax_mismatch", 2], ["late_fee", 1]]);
-  expect(groupByCode(items, "warning").map((g) => g.code)).toEqual(["late_fee"]);
-  expect(groupByCode(items, "info")).toEqual([]);
+  expect(filterBySeverity(items, "").map((i) => [i.id, i.flags.length])).toEqual([[1, 2], [2, 1]]);
+  expect(filterBySeverity(items, "warning").map((i) => [i.id, i.flags.map((f) => f.code)])).toEqual([[1, ["late_fee"]]]);
+  expect(filterBySeverity(items, "info")).toEqual([]);
 });
 
 test("inbox classes land on the right tab", () => {

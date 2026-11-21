@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Empty, Table, ymd } from "@/components/ui";
 import { Icon } from "@/components/icons";
 import { Load, Notice, post } from "@/components/api";
+import { flagTitle, inboxClass } from "@/components/labels";
 
 type Imported = { emailId: string; class: string; invoiceIds: number[]; flags: string[]; skipped?: string };
 type Other = { emailId: string; from: string; subject: string; receivedAt: string | null; class: string; reason?: string | null; flags: string[] };
@@ -56,8 +57,8 @@ export default function InboxPage() {
             <tbody>
               {imported.filter((m) => tabOf(m.class) === tab).map((m) => (
                 <tr key={m.emailId}>
-                  <td>{m.emailId}</td><td>{m.skipped ? "already imported" : m.class}</td><td>{WHY[m.class]}</td>
-                  <td>{m.invoiceIds.map((id) => <Link key={id} href={`/invoices/${id}`}>Invoice {id} </Link>)}</td><td>{m.flags.join(", ")}</td>
+                  <td>{m.emailId}</td><td>{m.skipped ? inboxClass("already_imported") : inboxClass(m.class)}</td><td>{WHY[m.class] ?? "—"}</td>
+                  <td>{m.invoiceIds.map((id) => <Link key={id} href={`/invoices/${id}`}>Invoice {id} </Link>)}</td><td>{m.flags.map(flagTitle).join(", ")}</td>
                 </tr>
               ))}
             </tbody>
@@ -74,7 +75,7 @@ export default function InboxPage() {
                   {mail.map((m) => (
                     <tr key={m.emailId}>
                       <td>{m.from}</td><td>{m.subject}</td><td>{ymd(m.receivedAt)}</td>
-                      <td>{WHY[m.class] ?? m.class}{m.reason && `: ${m.reason}`}</td>
+                      <td>{WHY[m.class] ?? inboxClass(m.class)}{m.reason && `: ${m.reason}`}</td>
                       {/* The list does not say which vendor sent it, so this goes to the vendor list. */}
                       <td>{m.class === "bank_change" ? <Link href="/vendors">Vendors</Link> : "—"}</td>
                     </tr>

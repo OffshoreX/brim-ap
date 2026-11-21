@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { ROLES, type MeResponse, type Role, type UsersResponse } from "@/contracts";
 import { call, Notice, post, useApi } from "@/components/api";
 import { HOME } from "@/components/RoleHome";
+import { roleName } from "@/components/labels";
 
 const WORD: Record<Role, string> = { employee: "Submits", approver: "Approves", ap_clerk: "Processes", finance_manager: "Pays", controller_admin: "Governs", auditor: "Audits" };
 
@@ -52,7 +53,7 @@ export default function LoginPage() {
           <div className="personas">
             {ROLES.map((role) => (
               <section key={role}>
-                <h2>{role.replaceAll("_", " ")}</h2>
+                <h2>{roleName(role)}</h2>
                 {demo.filter((u) => u.role === role).map((u) => (
                   <button key={u.id} className="persona" disabled={busy} onClick={() => enter({ userId: u.id })}>{u.name}<small>{WORD[role]}</small></button>
                 ))}

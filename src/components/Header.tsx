@@ -6,6 +6,7 @@ import type { Role } from "@/contracts";
 import { FORBIDDEN, post } from "./api";
 import { useCurrentUser } from "./CurrentUser";
 import { LogoMark } from "./icons";
+import { roleName } from "./labels";
 
 // Which links each role sees. Looks only: the server still answers 403 on any page or call the role may not use.
 const ALL: Role[] = ["employee", "ap_clerk", "approver", "finance_manager", "controller_admin", "auditor"];
@@ -52,7 +53,7 @@ export default function Header() {
         ))}
       </nav>
       <span className="who">
-        {user ? <>{user.name} <span className="role">{user.role.replaceAll("_", " ")}</span></> : error ? "Not signed in" : "…"}{" "}
+        {user ? <>{user.name} <span className="role">{roleName(user.role)}</span></> : error ? "Not signed in" : "…"}{" "}
         {user ? <button className="secondary" onClick={signOut}>Sign out</button> : <Link href="/login">Sign in</Link>}
       </span>
     </header>
