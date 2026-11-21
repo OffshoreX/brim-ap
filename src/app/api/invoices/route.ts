@@ -1,8 +1,11 @@
 import { handle, requireRole } from "@/server/authz";
-import { listInvoices } from "@/server/invoices";
+import { countInvoices, listInvoices } from "@/server/invoices";
+import { pagedJson, parsePage } from "@/server/paging";
 
 export const GET = (request: Request) =>
   handle(() => {
     const user = requireRole(request, ["employee", "ap_clerk", "approver", "finance_manager", "controller_admin", "auditor"]);
-    return Response.json(listInvoices(user));
+    const page = parsePage(request);
+    if (page instanceof Response) return page;
+    return pagedJson(listInvoices(user, page), countInvoices(user));
   });

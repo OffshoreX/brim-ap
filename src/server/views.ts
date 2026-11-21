@@ -1,5 +1,6 @@
 import type { User } from "@/contracts";
 import { getDb } from "./db";
+import { DEFAULT_PAGE, MAX_LIMIT, type Page } from "./paging";
 
 // Read side for the screens. Response types live here, not in contracts.ts (lead-owned).
 // Every function takes the already-authorised user; roles are checked by requireRole in the route.
@@ -121,35 +122,51 @@ const auditRow = (r: unknown) => {
   return { id: a.id, at: a.at, actorId: a.actor_id, action: a.action, entity: a.entity, entityId: a.entity_id, before: parseJson(a.before), after: parseJson(a.after) };
 };
 
-export type AuditFilter = { entity?: string; actor?: number; from?: string; to?: string; limit?: number };
+export type AuditFilter = { entity?: string; actor?: number; from?: string; to?: string; limit?: number; offset?: number };
 
-// Filters are bound parameters, never built into the SQL text. Newest first, capped at 500.
-export function auditLog(f: AuditFilter) {
+// Filters are bound parameters, never built into the SQL text.
+function auditWhere(f: AuditFilter) {
   const where: string[] = [];
   const args: unknown[] = [];
   if (f.entity) { where.push("entity = ?"); args.push(f.entity); }
   if (f.actor !== undefined) { where.push("actor_id = ?"); args.push(f.actor); }
   if (f.from) { where.push("at >= ?"); args.push(f.from); }
   if (f.to) { where.push("at <= ?"); args.push(f.to); }
-  const limit = Math.min(f.limit ?? 100, 500);
+  return { sql: where.length ? "WHERE " + where.join(" AND ") : "", args };
+}
+
+export function countAudit(f: AuditFilter): number {
+  const w = auditWhere(f);
+  return (getDb().prepare(`SELECT COUNT(*) n FROM audit_log ${w.sql}`).get(...w.args) as { n: number }).n;
+}
+
+// Newest first, default 50 rows, at most 200 per page.
+export function auditLog(f: AuditFilter) {
+  const w = auditWhere(f);
+  const limit = Math.min(f.limit ?? DEFAULT_PAGE.limit, MAX_LIMIT);
   const rows = getDb()
-    .prepare(`SELECT id, at, actor_id, action, entity, entity_id, before, after FROM audit_log ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY at DESC, id DESC LIMIT ?`)
-    .all(...args, limit);
+    .prepare(`SELECT id, at, actor_id, action, entity, entity_id, before, after FROM audit_log ${w.sql} ORDER BY at DESC, id DESC LIMIT ? OFFSET ?`)
+    .all(...w.args, limit, f.offset ?? 0);
   return rows.map(auditRow);
 }
 
+const INBOX_FROM = `FROM approval_steps s JOIN invoices i ON i.id = s.invoice_id
+       WHERE s.user_id = ? AND s.status = 'pending' AND i.status = 'pending_approval'
+         AND s.step_no = (SELECT MIN(step_no) FROM approval_steps WHERE invoice_id = s.invoice_id AND status = 'pending')`;
+
+export const countApprovalInbox = (user: User) =>
+  (getDb().prepare(`SELECT COUNT(*) n ${INBOX_FROM}`).get(user.id) as { n: number }).n;
+
 // Steps whose turn it is: the lowest pending step of each pending_approval invoice, if it is this user's.
-export function approvalInbox(user: User) {
+export function approvalInbox(user: User, page: Page = DEFAULT_PAGE) {
   return getDb()
     .prepare(
       `SELECT s.invoice_id AS invoiceId, s.step_no AS stepNo, s.role, s.reason, s.delegated_from_id AS delegatedFromId,
               i.invoice_number AS invoiceNumber, i.vendor_id AS vendorId, i.total_cents AS totalCents, i.currency
-       FROM approval_steps s JOIN invoices i ON i.id = s.invoice_id
-       WHERE s.user_id = ? AND s.status = 'pending' AND i.status = 'pending_approval'
-         AND s.step_no = (SELECT MIN(step_no) FROM approval_steps WHERE invoice_id = s.invoice_id AND status = 'pending')
-       ORDER BY s.invoice_id`
+       ${INBOX_FROM}
+       ORDER BY s.invoice_id LIMIT ? OFFSET ?`
     )
-    .all(user.id);
+    .all(user.id, page.limit, page.offset);
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -172,12 +189,15 @@ export function dashboard(user: User, today: string = todayIso()) {
   return { countsByStatus: byStatus, needsReview: byStatus.needs_review ?? 0, dueThisWeekCadCents: due.c };
 }
 
-export function listPayments() {
+export const countPayments = () =>
+  (getDb().prepare("SELECT COUNT(*) n FROM payments WHERE status IN ('scheduled','settled')").get() as { n: number }).n;
+
+export function listPayments(page: Page = DEFAULT_PAGE) {
   return getDb()
     .prepare(
       `SELECT p.id, p.invoice_id AS invoiceId, i.invoice_number AS invoiceNumber, p.vendor_id AS vendorId, p.method, p.status,
               p.scheduled_date AS scheduledDate, p.paid_at AS paidAt, p.amount_cents AS amountCents, p.currency, p.reference
-       FROM payments p JOIN invoices i ON i.id = p.invoice_id WHERE p.status IN ('scheduled','settled') ORDER BY p.id`
+       FROM payments p JOIN invoices i ON i.id = p.invoice_id WHERE p.status IN ('scheduled','settled') ORDER BY p.id LIMIT ? OFFSET ?`
     )
-    .all();
+    .all(page.limit, page.offset);
 }

@@ -1,5 +1,6 @@
 import type { User } from "@/contracts";
 import { getDb } from "./db";
+import { DEFAULT_PAGE, type Page } from "./paging";
 
 // Response types live here, not in contracts.ts (lead-owned).
 export type InvoiceListItem = {
@@ -20,7 +21,7 @@ type Row = {
 };
 
 // This is the only place that decides which invoices a role may see.
-export function listInvoices(user: User): InvoiceListItem[] {
+function visibleWhere(user: User): { where: string; args: unknown[] } {
   let where = "";
   const args: unknown[] = [];
   if (user.role === "employee") {
@@ -29,12 +30,22 @@ export function listInvoices(user: User): InvoiceListItem[] {
   } else if (user.role === "approver") {
     where = "WHERE status = 'pending_approval'";
   } // ap_clerk, finance_manager, controller_admin, auditor see all
+  return { where, args };
+}
+
+export function countInvoices(user: User): number {
+  const v = visibleWhere(user);
+  return (getDb().prepare(`SELECT COUNT(*) n FROM invoices ${v.where}`).get(...v.args) as { n: number }).n;
+}
+
+export function listInvoices(user: User, page: Page = DEFAULT_PAGE): InvoiceListItem[] {
+  const v = visibleWhere(user);
   const rows = getDb()
     .prepare(
       `SELECT id, status, vendor_id, invoice_number, invoice_date, total_cents, currency, requester_id, source_file
-       FROM invoices ${where} ORDER BY id`
+       FROM invoices ${v.where} ORDER BY id LIMIT ? OFFSET ?`
     )
-    .all(...args) as Row[];
+    .all(...v.args, page.limit, page.offset) as Row[];
   return rows.map((r) => ({
     id: r.id,
     status: r.status,

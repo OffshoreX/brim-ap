@@ -4,6 +4,7 @@ import type { User } from "@/contracts";
 import { writeAudit } from "./audit";
 import { getDb } from "./db";
 import { inspectUpload, storeUpload } from "./files";
+import { DEFAULT_PAGE, type Page } from "./paging";
 
 export type EmailClass = "invoice" | "credit_note" | "statement" | "payment_inquiry" | "marketing" | "invoice_missing_attachment";
 export type Email = { email_id: string; from_address: string; subject: string; received_at?: string; body: string; attachments: string[] };
@@ -96,12 +97,16 @@ export function importInbox(user: User, emails: Email[] = readEmails()): ImportR
 }
 
 // Everything that did not become an invoice, plus invoice emails whose attachments failed.
-export function listOtherMail() {
+const OTHER_WHERE = "class NOT IN ('invoice','credit_note') OR flags != '[]'";
+export const countOtherMail = () =>
+  (getDb().prepare(`SELECT COUNT(*) n FROM inbox_mail WHERE ${OTHER_WHERE}`).get() as { n: number }).n;
+
+export function listOtherMail(page: Page = DEFAULT_PAGE) {
   const rows = getDb()
     .prepare(
       `SELECT email_id, from_address, subject, received_at, class, attachments, flags FROM inbox_mail
-       WHERE class NOT IN ('invoice','credit_note') OR flags != '[]' ORDER BY email_id`
+       WHERE ${OTHER_WHERE} ORDER BY email_id LIMIT ? OFFSET ?`
     )
-    .all() as { email_id: string; from_address: string; subject: string; received_at: string | null; class: string; attachments: string; flags: string }[];
+    .all(page.limit, page.offset) as { email_id: string; from_address: string; subject: string; received_at: string | null; class: string; attachments: string; flags: string }[];
   return rows.map((r) => ({ emailId: r.email_id, from: r.from_address, subject: r.subject, receivedAt: r.received_at, class: r.class, attachments: JSON.parse(r.attachments), flags: JSON.parse(r.flags) }));
 }
