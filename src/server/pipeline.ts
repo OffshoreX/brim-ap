@@ -117,16 +117,15 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
         )
       );
       if (x.bankDetails) {
-        const history = db.prepare("SELECT bank_details, changed_at FROM vendor_bank_history WHERE vendor_id = ?").all(vendorId) as {
-          bank_details: string; changed_at: string;
-        }[];
-        // The whole bank string is compared as one value; spacing and case are ignored by the rule.
+        // The dataset keeps only the last 4 digits of each account, so that is what gets compared.
+        // The account before the first change is the starting point; each change row is a later record.
+        const changes = db
+          .prepare("SELECT old_account_last4, new_account_last4, changed_at FROM vendor_bank_changes WHERE vendor_id = ? ORDER BY changed_at")
+          .all(vendorId) as { old_account_last4: string | null; new_account_last4: string | null; changed_at: string }[];
+        const history = changes.map((c) => ({ accountNumber: c.new_account_last4 ?? "", since: c.changed_at.slice(0, 10) }));
+        if (changes[0]?.old_account_last4) history.unshift({ accountNumber: changes[0].old_account_last4, since: "0000-01-01" });
         flags.push(
-          ...checkBankChange(
-            { accountNumber: x.bankDetails },
-            history.map((h) => ({ accountNumber: h.bank_details, since: h.changed_at.slice(0, 10) })),
-            new Date().toISOString().slice(0, 10)
-          )
+          ...checkBankChange({ accountNumber: x.bankDetails.replace(/\D/g, "").slice(-4) }, history, new Date().toISOString().slice(0, 10))
         );
       }
 
@@ -152,13 +151,13 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     const inv = db.prepare("SELECT department, requester_id FROM invoices WHERE id = ?").get(invoiceId) as {
       department: string | null; requester_id: number | null;
     };
-    const rows = db.prepare("SELECT id, role, manager_id, approval_limit_cents, on_leave, delegate_id FROM users").all() as {
-      id: number; role: string; manager_id: number | null; approval_limit_cents: number; on_leave: number; delegate_id: number | null;
+    const rows = db.prepare("SELECT id, role, manager_id, approval_limit_cents, status, delegate_user_id FROM users").all() as {
+      id: number; role: string; manager_id: number | null; approval_limit_cents: number; status: string; delegate_user_id: number | null;
     }[];
     const opt = (id: number | null) => (id === null ? undefined : String(id));
     const users = rows.map((u) => ({
       id: String(u.id), role: u.role, managerId: opt(u.manager_id), limitCents: u.approval_limit_cents,
-      onLeave: u.on_leave === 1, delegateId: opt(u.delegate_id),
+      onLeave: u.status === "on_leave", delegateId: opt(u.delegate_user_id),
     }));
     const requester = users.find((u) => u.id === String(inv.requester_id)) ?? { id: "", role: "", limitCents: 0 };
     // Same inputs as decideInvoice, so the approver named here is the one it will accept.

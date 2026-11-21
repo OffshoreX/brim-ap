@@ -15,7 +15,7 @@ beforeEach(() => {
     `INSERT INTO users (id,name,role,approval_limit_cents) VALUES
      (1,'Ann','approver',99999999),(2,'Fin','finance_manager',100000),(3,'Aud','auditor',0),(4,'Emp','employee',0)`
   ).run();
-  db.prepare("INSERT INTO vendors (id,name,bank_details) VALUES (1,'Acme, Inc','123-456')").run();
+  db.prepare("INSERT INTO vendors (id,name,bank_transit,bank_account) VALUES (1,'Acme, Inc','123','456')").run();
   db.prepare(
     `INSERT INTO invoices (id,status,vendor_id,invoice_number,invoice_date,total_cents,currency) VALUES
      (1,'approved',1,'INV-1',  '2026-01-01',12345,'CAD'),

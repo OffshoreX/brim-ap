@@ -57,7 +57,7 @@ const csvCell = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"
 export function eftFileCsv(): string {
   const rows = getDb()
     .prepare(
-      `SELECT p.id, i.invoice_number, v.name AS vendor, v.bank_details, p.amount_cents, p.currency
+      `SELECT p.id, i.invoice_number, v.name AS vendor, v.bank_institution, v.bank_transit, v.bank_account, p.amount_cents, p.currency
        FROM payments p JOIN invoices i ON i.id = p.invoice_id LEFT JOIN vendors v ON v.id = i.vendor_id
        ORDER BY p.id`
     )
@@ -65,12 +65,14 @@ export function eftFileCsv(): string {
     id: number;
     invoice_number: string;
     vendor: string | null;
-    bank_details: string | null;
+    bank_institution: string | null;
+    bank_transit: string | null;
+    bank_account: string | null;
     amount_cents: number;
     currency: string;
   }[];
   const lines = rows.map((r) =>
-    [r.invoice_number, r.vendor ?? "", r.bank_details ?? "", formatCents(r.amount_cents), r.currency, `PAY-${r.id}`]
+    [r.invoice_number, r.vendor ?? "", [r.bank_institution, r.bank_transit, r.bank_account].filter(Boolean).join("-"), formatCents(r.amount_cents), r.currency, `PAY-${r.id}`]
       .map(csvCell)
       .join(",")
   );

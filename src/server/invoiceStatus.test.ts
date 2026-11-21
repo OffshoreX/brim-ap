@@ -1,7 +1,6 @@
 import { beforeEach, expect, test } from "vitest";
-import { INVOICE_STATUSES, type InvoiceStatus } from "../contracts";
 import { getDb, resetDbForTests } from "./db";
-import { canTransition, transition } from "./invoiceStatus";
+import { canTransition, INVOICE_STATUSES, transition, type InvoiceStatus } from "./invoiceStatus";
 
 process.env.DB_PATH = ":memory:";
 
@@ -13,7 +12,9 @@ const ALLOWED: [InvoiceStatus, InvoiceStatus][] = [
   ["needs_review", "rejected"],
   ["pending_approval", "approved"],
   ["pending_approval", "rejected"],
+  ["approved", "scheduled"],
   ["approved", "paid"],
+  ["scheduled", "paid"],
 ];
 
 function makeInvoice(status: InvoiceStatus) {
@@ -46,6 +47,8 @@ test.each([
   ["rejected", "approved"],
   ["received", "paid"],
   ["approved", "pending_approval"],
+  ["scheduled", "approved"],
+  ["paid", "scheduled"],
 ] as [InvoiceStatus, InvoiceStatus][])("%s -> %s throws and changes nothing", (from, to) => {
   makeInvoice(from);
   expect(() => transition(1, to, 1)).toThrow();

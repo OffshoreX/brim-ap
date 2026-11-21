@@ -16,7 +16,7 @@ export class ApprovalError extends Error {
   }
 }
 
-type UserRow = { id: number; role: string; manager_id: number | null; approval_limit_cents: number; on_leave: number; delegate_id: number | null };
+type UserRow = { id: number; role: string; manager_id: number | null; approval_limit_cents: number; status: string; delegate_user_id: number | null };
 type InvoiceRow = { status: string; total_cents: number; department: string | null; requester_id: number | null };
 
 const n = (id: number | null) => (id === null ? undefined : String(id));
@@ -32,13 +32,13 @@ export function decideInvoice(user: User, invoiceId: number, decision: Decision,
     if (inv.requester_id === user.id) throw new ApprovalError(403, "You cannot decide an invoice you requested");
 
     // The server recomputes who may decide; nothing the client sends is trusted.
-    const users = (db.prepare("SELECT id, role, manager_id, approval_limit_cents, on_leave, delegate_id FROM users").all() as UserRow[]).map((u) => ({
+    const users = (db.prepare("SELECT id, role, manager_id, approval_limit_cents, status, delegate_user_id FROM users").all() as UserRow[]).map((u) => ({
       id: String(u.id),
       role: u.role,
       managerId: n(u.manager_id),
       limitCents: u.approval_limit_cents,
-      onLeave: u.on_leave === 1,
-      delegateId: n(u.delegate_id),
+      onLeave: u.status === "on_leave",
+      delegateId: n(u.delegate_user_id),
     }));
     const requester = users.find((u) => u.id === String(inv.requester_id)) ?? { id: "", role: "", limitCents: 0 };
     const route = routeApproval({ totalCents: inv.total_cents, department: inv.department ?? "" }, requester, users, loadApprovalRules());

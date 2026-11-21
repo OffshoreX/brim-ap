@@ -12,7 +12,7 @@ beforeEach(() => {
   resetDbForTests();
   const db = getDb();
   db.prepare(
-    `INSERT INTO users (id,name,role,approval_limit_cents,delegate_id) VALUES
+    `INSERT INTO users (id,name,role,approval_limit_cents,delegate_user_id) VALUES
      (1,'Clerk','ap_clerk',0,NULL),(2,'Ann','approver',1000000,3),(3,'Del','approver',1000000,NULL),
      (4,'Oth','finance_manager',0,NULL),(5,'Emp','employee',0,NULL)`
   ).run();
@@ -61,7 +61,7 @@ test.each(["approved", "rejected"] as const)("right approver %s writes approvals
 });
 
 test("on-leave approver's delegate can decide and is marked delegated; the approver cannot", async () => {
-  getDb().prepare("UPDATE users SET on_leave = 1 WHERE id = 2").run();
+  getDb().prepare("UPDATE users SET status = 'on_leave' WHERE id = 2").run();
   expect((await post(2, 1, { decision: "approved", comment: "" })).status).toBe(403);
   const res = await post(3, 1, { decision: "approved", comment: "covering" });
   expect(res.status).toBe(200);
