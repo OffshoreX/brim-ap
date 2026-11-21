@@ -18,7 +18,8 @@ async function failure(res: Response): Promise<string | undefined> {
   return body?.error ?? `Request failed (${res.status})`;
 }
 
-export async function call<T = unknown>(url: string, init?: RequestInit): Promise<{ data?: T; error?: string }> {
+// `total` is the server's X-Total-Count (the whole list size when the body is only one page).
+export async function call<T = unknown>(url: string, init?: RequestInit): Promise<{ data?: T; error?: string; total?: number }> {
   let res: Response;
   try {
     res = await fetch(url, init);
@@ -26,7 +27,9 @@ export async function call<T = unknown>(url: string, init?: RequestInit): Promis
     return { error: "Could not reach the server." };
   }
   const error = await failure(res.clone());
-  return error ? { error } : { data: (await res.json().catch(() => null)) as T };
+  if (error) return { error };
+  const header = res.headers.get("X-Total-Count");
+  return { data: (await res.json().catch(() => null)) as T, total: header === null ? undefined : Number(header) };
 }
 
 // Downloads a file endpoint through fetch so a 401 or 403 shows a message instead of saving an error page.
@@ -66,7 +69,7 @@ export const post = <T,>(url: string, body: unknown, headers?: Record<string, st
 
 // Loads a GET endpoint. Pass null to wait (e.g. until a filter is ready).
 export function useApi<T>(url: string | null) {
-  const [state, setState] = useState<{ data?: T; error?: string }>({});
+  const [state, setState] = useState<{ data?: T; error?: string; total?: number }>({});
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (url === null) return;
