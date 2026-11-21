@@ -14,6 +14,7 @@ const LINKS: [string, string, Role[]][] = [
   ["/approvals", "Approvals", ["approver", "finance_manager", "controller_admin"]],
   ["/exceptions", "Exceptions", ["ap_clerk", "finance_manager", "controller_admin"]],
   ["/payments", "Payments", ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
+  ["/reports", "Reports", ["finance_manager", "controller_admin", "auditor"]],
   ["/vendors", "Vendors", ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
   ["/audit", "Audit log", ["controller_admin", "auditor"]],
   ["/admin/approval-rules", "Approval rules", ["controller_admin"]],

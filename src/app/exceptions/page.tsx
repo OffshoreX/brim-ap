@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { SeverityChip, Table } from "@/components/ui";
-import { Load, money, Notice, post, type Flag } from "@/components/api";
+import { FLAG_TITLE, Load, money, Notice, post, type Flag } from "@/components/api";
 
 type Item = { id: number; invoiceNumber: string; totalCents: number; currency: string; flags: Flag[] };
 
@@ -33,7 +33,7 @@ function ExceptionRow({ item, done }: { item: Item; done: () => void }) {
     <tr>
       <td><Link href={`/invoices/${item.id}`}>{item.invoiceNumber || item.id}</Link></td>
       <td className="num">{money(item.totalCents, item.currency)}</td>
-      <td>{item.flags.map((f) => f.message).join("; ")}</td>
+      <td>{item.flags.map((f) => (FLAG_TITLE[f.code] ? `${FLAG_TITLE[f.code]}: ${f.message}` : f.message)).join("; ")}</td>
       <td>
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (required)" aria-label={`Note for invoice ${item.id}`} />
         <button onClick={() => resolve("send_to_approval")}>Send to approval</button>
@@ -63,7 +63,7 @@ export default function ExceptionsPage() {
             <>
               {groups.map((g) => (
                 <section key={g.code}>
-                  <h2><code>{g.code}</code> {g.severity && <SeverityChip severity={g.severity} />} <small>({g.items.length})</small></h2>
+                  <h2><code>{g.code}</code> {FLAG_TITLE[g.code] && <>{FLAG_TITLE[g.code]} </>}{g.severity && <SeverityChip severity={g.severity} />} <small>({g.items.length})</small></h2>
                   <Table>
                     <thead><tr><th>Invoice</th><th className="num">Total</th><th>Why flagged</th><th>Resolve</th></tr></thead>
                     <tbody>{g.items.map((i) => <ExceptionRow key={i.id} item={i} done={reload} />)}</tbody>

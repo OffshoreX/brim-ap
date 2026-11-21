@@ -30,6 +30,9 @@ const DATA: Record<string, unknown> = {
   "/api/vendors": [vendor],
   "/api/vendors/1": { ...vendor, bankChanges: [{ id: 1, changed_at: "2026-11-01", changed_by_user_id: 4, request_channel: "email", status: "pending", old_account_last4: "1234", new_account_last4: "9876", verified_by_user_id: null }] },
   "/api/audit": [audit],
+  "/api/reports/aging": [{ bucket: "0-30", invoices: 2, totalCadCents: 123456 }, { bucket: "31-60", invoices: 0, totalCadCents: 0 }, { bucket: "61-90", invoices: 0, totalCadCents: 0 }, { bucket: "90+", invoices: 1, totalCadCents: 5000 }],
+  "/api/reports/spend": [{ key: "Acme Freight", invoices: 3, totalCadCents: 987654 }],
+  "/api/reports/discounts": [{ vendor: "Acme Freight", terms: "2/10 net 30", takenPayments: 1, takenCadCents: 2000, missedPayments: 2, missedCadCents: 4000 }],
   "/api/admin/approval-rules": { rules: [{ id: 1, policy_id: "P02", over_cents: 500000, extra_role: "finance_manager" }] },
   "/api/inbox/other": [{ emailId: "E1", from: "promo@x.com", subject: "Big sale", receivedAt: null, class: "marketing", attachments: [], flags: [] }],
 };
@@ -58,6 +61,7 @@ import Audit from "./audit/page";
 import Rules from "./admin/approval-rules/page";
 import Inbox, { tabOf } from "./inbox/page";
 import Upload from "./upload/page";
+import Reports from "./reports/page";
 import { groupByCode } from "./exceptions/page";
 import { runBatch, type Row } from "@/components/BatchUpload";
 
@@ -75,6 +79,7 @@ const PAGES: [string, () => ReactNode, string][] = [
   ["approval rules", Rules, "finance_manager"],
   ["inbox", Inbox, "Invoice emails"],
   ["upload", Upload, "Drag invoice files here"],
+  ["reports", Reports, "9,876.54"],
 ];
 
 test.each(PAGES)("%s page renders its data", (_name, Page, expected) => {

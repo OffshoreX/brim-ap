@@ -2,6 +2,7 @@
 import { StatusBadge, Table } from "@/components/ui";
 import { Load, money } from "@/components/api";
 import RoleHome from "@/components/RoleHome";
+import DashboardCharts from "@/components/ReportCharts";
 
 type Dash = { countsByStatus: Record<string, number>; needsReview: number; dueThisWeekCadCents: number };
 
@@ -18,6 +19,7 @@ export default function DashboardPage() {
               <div className="card">Needs review<strong>{d.needsReview}</strong></div>
               <div className="card">Due this week<strong>{money(d.dueThisWeekCadCents, "CAD")}</strong></div>
             </div>
+            <DashboardCharts />
             <Table>
               <thead><tr><th>Status</th><th className="num">Invoices</th></tr></thead>
               <tbody>

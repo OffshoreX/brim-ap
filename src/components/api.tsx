@@ -100,13 +100,15 @@ export function Notice({ ok, error }: { ok?: string; error?: string }) {
 
 // Backend flags are {code, message, severity} objects.
 export type Flag = { code: string; message: string; severity?: string };
+// Plain names for the budget and outlier warnings, shown before the server's own reason text.
+export const FLAG_TITLE: Record<string, string> = { department_over_budget: "Department over budget", amount_outlier: "Unusual amount for this vendor" };
 export function Flags({ flags }: { flags: Flag[] }) {
   if (flags.length === 0) return <p className="empty">No flags. Every check passed.</p>;
   return (
     <ul className="flags">
       {flags.map((f, i) => (
         <li key={i}>
-          <SeverityChip severity={f.severity} /> <code>{f.code}</code> {f.message}
+          <SeverityChip severity={f.severity} /> <code>{f.code}</code> {FLAG_TITLE[f.code] && <strong>{FLAG_TITLE[f.code]}: </strong>}{f.message}
         </li>
       ))}
     </ul>
