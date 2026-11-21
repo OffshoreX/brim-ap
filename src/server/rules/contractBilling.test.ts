@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { billingLines } from '../pipeline';
 import { checkContractByBilling, type BillingContract, type BillingInvoice, type RateFor } from './contract';
 
 const base: Omit<BillingContract, 'billingType'> = { currency: 'CAD', startDate: '2026-01-01', endDate: '2026-12-31' };
@@ -60,5 +61,17 @@ describe('checkContractByBilling', () => {
   });
   it('USD invoice with no rate is flagged, not guessed', () => {
     expect(run(inv({ currency: 'USD' }), fixed)).toEqual(['contract_fx_unknown']);
+  });
+});
+
+describe('billingLines', () => {
+  const kind = (description: string) => billingLines([{ description, amountCents: 1, unitPriceCents: 1 }])[0].kind;
+  it('hours and legal-services lines are hourly, fuel is fuel, the rest is other', () => {
+    expect([kind('Tax advisory hours'), kind('Legal services - Lease amendment'), kind('Fuel surcharge (9.88%)'), kind('LTL shipment Regina-Hamilton')]).toEqual(['hourly', 'hourly', 'fuel_surcharge', 'other']);
+  });
+  it('a legal-services line over the retainer hourly cap is caught', () => {
+    const retainer: BillingContract = { ...base, billingType: 'retainer', hourlyRateCapCents: 52_000 };
+    const lines = billingLines([{ description: 'Legal services - Lease amendment', amountCents: 36 * 60_000, unitPriceCents: 60_000 }]);
+    expect(run(inv({ subtotalCents: 36 * 60_000, lines }), retainer)).toEqual(['contract_hourly_rate_exceeded']);
   });
 });

@@ -123,9 +123,10 @@ export const toBillingContract = (c: ContractRow): BillingContract => ({
 });
 
 // What a line is comes from its description here; the rule never guesses.
+// A law firm bills "Legal services - <matter>" as hours x rate with no word 'hours', so that wording counts as hourly too.
 export const billingLines = (lines: { description: string; amountCents: number; unitPriceCents: number }[]): BillingLine[] =>
   lines.map((l) => ({
-    kind: /fuel/i.test(l.description) ? "fuel_surcharge" : /\bhours?\b|\bhrs?\b/i.test(l.description) ? "hourly" : "other",
+    kind: /fuel/i.test(l.description) ? "fuel_surcharge" : /\bhours?\b|\bhrs?\b|\blegal services\b/i.test(l.description) ? "hourly" : "other",
     amountCents: l.amountCents, unitPriceCents: l.unitPriceCents,
   }));
 
