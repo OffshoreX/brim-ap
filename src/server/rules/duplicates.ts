@@ -19,29 +19,27 @@ export function editDistance(a: string, b: string): number {
 
 const days = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / DAY_MS;
 
+// A re-sent invoice shows up within days. A same-total bill a month later (monthly fee, retainer) is the next bill, not a duplicate:
+// recurring vendors repeat the total with sequential numbers one character apart, on a 21 to 35 day rhythm, so nothing beyond these windows counts.
+export const NEAR_WINDOW_DAYS = 7; // same total, any other number
+export const TYPO_WINDOW_DAYS = 14; // same total, number one character off (a retyped copy takes a little longer to turn up)
+
+// Exact duplicates (same vendor, same normalized number) are errors, all of them. Without one, a near duplicate is a warning when
+// the vendor already has an invoice with the same total inside the window above. A different total is never a duplicate:
+// a close number alone is the next one in the sequence (000921 after 000919).
 export function findDuplicates(inv: InvoiceKey, existing: InvoiceKey[]): Finding[] {
-  const out: Finding[] = [];
   const num = normalizeNumber(inv.number);
-  for (const e of existing) {
-    // Different vendor, same invoice, or credit note vs invoice: never a duplicate.
-    if (e.vendorId !== inv.vendorId || (e.id && e.id === inv.id)) continue;
-    if ((e.kind ?? 'invoice') !== (inv.kind ?? 'invoice')) continue;
-    const ref = e.id ?? e.number;
-    const enum_ = normalizeNumber(e.number);
-    if (enum_ === num) {
-      out.push({ code: 'DUPLICATE_EXACT', message: `Same vendor and invoice number as ${ref}`, severity: 'error' });
-      continue;
-    }
-    // Same total close in time is the signal. A close number alone is just the next one in the vendor's sequence
-    // (000921 after 000919), and a monthly fee repeats its total all year, so neither counts without the 30-day window.
-    const reasons: string[] = [];
-    if (e.totalCents === inv.totalCents && days(e.date, inv.date) <= 30) {
-      reasons.push('same total within 30 days');
-      if (editDistance(enum_, num) <= 2) reasons.push('invoice number within edit distance 2');
-    }
-    if (reasons.length) {
-      out.push({ code: 'DUPLICATE_NEAR', message: `Possible duplicate of ${ref}: ${reasons.join(', ')}`, severity: 'warning' });
-    }
+  const sameVendor = existing.filter((e) => e.vendorId === inv.vendorId && !(e.id && e.id === inv.id) && (e.kind ?? 'invoice') === (inv.kind ?? 'invoice'));
+  const exact = sameVendor.filter((e) => normalizeNumber(e.number) === num);
+  if (exact.length) {
+    return exact.map((e): Finding => ({ code: 'DUPLICATE_EXACT', message: `Same vendor and invoice number as ${e.id ?? e.number}`, severity: 'error' }));
   }
-  return out;
+  const hits = sameVendor
+    .filter((e) => e.totalCents === inv.totalCents)
+    .map((e) => ({ e, gap: days(e.date, inv.date), typo: editDistance(normalizeNumber(e.number), num) <= 1 }))
+    .filter((h) => h.gap <= (h.typo ? TYPO_WINDOW_DAYS : NEAR_WINDOW_DAYS))
+    .sort((x, y) => x.gap - y.gap);
+  if (!hits.length) return [];
+  const { e, typo } = hits[0]; // one finding, citing the closest in time
+  return [{ code: 'DUPLICATE_NEAR', message: `Possible duplicate of ${e.id ?? e.number}: same total within ${Math.round(hits[0].gap)} days${typo ? ', invoice number within one character' : ''}`, severity: 'warning' }];
 }

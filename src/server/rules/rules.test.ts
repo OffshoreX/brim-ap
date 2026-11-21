@@ -27,22 +27,27 @@ describe('findDuplicates', () => {
     expect(codes(findDuplicates(incoming({ number: 'inv-1000' }), [base]))).toEqual(['DUPLICATE_EXACT']);
   });
   it('near duplicate by amount and date', () => {
-    const f = findDuplicates(incoming({ number: 'ZZZ-9', date: '2026-02-01' }), [base]);
+    const f = findDuplicates(incoming({ number: 'ZZZ-9', date: '2026-01-15' }), [base]);
     expect(codes(f)).toEqual(['DUPLICATE_NEAR']);
-    expect(f[0].message).toContain('same total');
+    expect(f[0].message).toContain('same total within 5 days');
   });
-  it('same total but more than 30 days apart is not a match', () => {
-    expect(findDuplicates(incoming({ number: 'ZZZ-9', date: '2026-03-01' }), [base])).toEqual([]);
+  it('same total with a different number a month apart is not a duplicate', () => {
+    expect(findDuplicates(incoming({ number: 'ZZZ-9', date: '2026-02-09' }), [base])).toEqual([]);
   });
-  it('a close number adds to the reason when the total and date match', () => {
-    const f = findDuplicates(incoming({ number: 'INV-1002', date: '2026-01-12' }), [base]);
-    expect(f[0].message).toContain('edit distance');
+  it('one-character typo in the number with the same total, days apart, is flagged', () => {
+    const f = findDuplicates(incoming({ number: 'INV-1001', date: '2026-01-22' }), [base]);
+    expect(codes(f)).toEqual(['DUPLICATE_NEAR']);
+    expect(f[0].message).toContain('within one character');
   });
-  it('a close number alone, or with the same total a year later, is not a duplicate', () => {
-    expect(findDuplicates(incoming({ number: 'INV-1002', totalCents: 1 }), [base])).toEqual([]);
-    expect(findDuplicates(incoming({ number: 'INV-1002', date: '2027-01-01' }), [base])).toEqual([]);
+  it('a typo bill 3 weeks later is the next bill in a sequence, not flagged', () => {
+    expect(findDuplicates(incoming({ number: 'INV-1001', date: '2026-02-01' }), [base])).toEqual([]);
+  });
+  it('leading zeros, spacing and case are an exact duplicate, not a near one', () => {
+    expect(codes(findDuplicates(incoming({ number: ' 00inv-1000 ' }), [base]))).toEqual(['DUPLICATE_EXACT']);
+    expect(codes(findDuplicates(incoming({ number: '0042' }), [{ ...base, number: ' 42' }]))).toEqual(['DUPLICATE_EXACT']);
   });
   it('a close number with a different total is the next invoice in the sequence, not a duplicate', () => {
+    expect(findDuplicates(incoming({ number: 'INV-1001', totalCents: 1 }), [base])).toEqual([]);
     expect(findDuplicates(incoming({ number: '000921', totalCents: 212136 }), [{ ...base, number: '000919', totalCents: 68720 }])).toEqual([]);
   });
   it('a suffixed resubmission with the same total is caught', () => {
@@ -56,4 +61,26 @@ describe('findDuplicates', () => {
     expect(findDuplicates(incoming({ kind: 'credit_note', totalCents: -5000 }), [base])).toEqual([]);
   });
   it('does not match itself', () => expect(findDuplicates(base, [base])).toEqual([]));
+});
+
+describe('findDuplicates recurring bills', () => {
+  const monthly = (n: number, number: string, date: string): InvoiceKey => ({ ...base, id: `m${n}`, number, date, totalCents: 310000 });
+  const series = [monthly(1, '002679', '2026-01-05'), monthly(2, '002681', '2026-02-03'), monthly(3, '002684', '2026-03-04')];
+  const next = (o: Partial<InvoiceKey>) => incoming({ totalCents: 310000, ...o });
+  it('the next month of a fixed monthly fee (sequential numbers, same total) is not flagged', () => {
+    expect(findDuplicates(next({ number: '002685', date: '2026-04-02' }), series)).toEqual([]);
+  });
+  it('a full year of monthly bills raises no near duplicate', () => {
+    const year = Array.from({ length: 12 }, (_, i) => monthly(i, String(2700 + i), new Date(Date.UTC(2026, 0, 3 + 28 * i)).toISOString().slice(0, 10)));
+    year.forEach((inv, i) => expect(findDuplicates(inv, year.slice(0, i))).toEqual([]));
+  });
+  it('the same fee arriving off rhythm, days after the last one, is flagged', () => {
+    const f = findDuplicates(next({ number: '002690', date: '2026-03-08' }), series);
+    expect(codes(f)).toEqual(['DUPLICATE_NEAR']);
+    expect(f[0].message).toContain('m3'); // cites the closest earlier bill
+  });
+  it('an exact duplicate stays an error', () => {
+    const f = findDuplicates(next({ number: '002684', date: '2026-04-02' }), series);
+    expect(f.map((x) => [x.code, x.severity])).toEqual([['DUPLICATE_EXACT', 'error']]);
+  });
 });
