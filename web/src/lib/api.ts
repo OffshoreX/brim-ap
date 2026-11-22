@@ -13,9 +13,25 @@ export class ApiError extends Error {
   }
 }
 
-// The server explains its own refusals as { error: "..." }; show that text as it is. Only a missing body gets a generic line.
-const failure = (status: number, data: unknown): ApiError =>
-  new ApiError(status, data && typeof data === "object" && "error" in data ? String((data as { error: unknown }).error) : `Request failed (${status}).`);
+// Plain default per status, used only when the server sent no { error } sentence. Never show codes or raw exceptions.
+export const defaultMessage = (status: number): string =>
+  status === 401 ? "Please sign in again."
+  : status === 403 ? "Your role can't do this."
+  : status === 404 ? "That doesn't exist or you can't see it."
+  : status === 409 ? "Someone else changed this. Refresh and try again."
+  : status === 429 ? "Too many attempts. Wait a minute and try again."
+  : status >= 500 ? "Something went wrong on our side. Try again."
+  : "That didn't work. Check what you entered and try again.";
+
+// The server explains its own refusals as { error: "..." }; show that sentence as it is.
+const failure = (status: number, data: unknown): ApiError => {
+  const e = data && typeof data === "object" && "error" in data ? (data as { error: unknown }).error : null;
+  return new ApiError(status, typeof e === "string" && e.trim() ? e : defaultMessage(status));
+};
+
+/** The sentence to show a person for any caught error: an ApiError already holds one; anything else (network, bug) gets a plain line. */
+export const errorText = (e: unknown): string =>
+  e instanceof ApiError ? e.message : "We couldn't reach the server. Check your connection and try again.";
 
 type Page = { limit: number; offset: number };
 

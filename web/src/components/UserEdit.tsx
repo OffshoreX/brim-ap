@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useAction } from "@/hooks/queries";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { toCents } from "@/lib/format";
 import { ROLE_LABEL } from "@/lib/roles";
 import { USER_STATUSES, type ManagedUser, type Role, type UserPatch, type UserStatus } from "@/lib/types";
@@ -68,7 +68,7 @@ export function UserEdit({ user, users, onClose }: { user: ManagedUser; users: M
           <ErrorText error={error} />
           {changed.length === 0 ? <p className="text-sm text-muted-foreground">Nothing changed yet.</p> : (
             <ConfirmInline label="Save changes" confirmLabel="Yes, save" pending={save.isPending || cents === null} message={`Change ${changed.join(", ")} for ${user.name}?`}
-              onConfirm={() => { setError(null); save.mutateAsync(patch).then(() => { notify.info(`${user.name} updated`); onClose(); }).catch((e: Error) => setError(e.message)); }} />
+              onConfirm={() => { setError(null); save.mutateAsync(patch).then(() => { notify.info(`${user.name} updated`); onClose(); }).catch((e: Error) => setError(errorText(e))); }} />
           )}
         </div>
       </SheetContent>

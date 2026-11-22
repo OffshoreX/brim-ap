@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, errorText } from "@/lib/api";
 import { can } from "@/lib/roles";
 
 // Answers fetch from a table of path -> [status, json, headers]; records each call.
@@ -100,5 +100,24 @@ describe("roles", () => {
     expect(can("auditor", "runReconciliation")).toBe(false); // POST /api/reconciliation
     expect(can("finance_manager", "auditVerify")).toBe(false); // GET /api/audit/verify
     expect(can("controller_admin", "admin")).toBe(true);
+  });
+});
+
+describe("plain error sentences", () => {
+  const fail = (status: number, body: unknown) => {
+    vi.stubGlobal("fetch", async () => new Response(typeof body === "string" ? body : JSON.stringify(body), { status }));
+    return api.invoice(1).catch((e: unknown) => e);
+  };
+  it("shows the server's own {error} sentence", async () => {
+    expect(errorText(await fail(409, { error: "Invoice is paid, not approved." }))).toBe("Invoice is paid, not approved.");
+  });
+  it.each([[401, /sign in/], [403, /role can't/], [404, /doesn't exist/], [409, /Refresh/], [429, /Wait a minute/], [500, /our side/], [502, /our side/]])(
+    "gives a plain default for %i with no body, never a code or HTML", async (status, re) => {
+      const e = await fail(status, "<html>boom</html>");
+      expect(errorText(e)).toMatch(re);
+      expect(errorText(e)).not.toMatch(/\d{3}|HTTP|html/i);
+    });
+  it("hides a network failure's raw message", () => {
+    expect(errorText(new TypeError("Failed to fetch"))).not.toMatch(/Failed to fetch/);
   });
 });

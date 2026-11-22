@@ -5,7 +5,7 @@ import { Panel } from "@/components/Panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 
 // Same three roles as the Reports page (finance manager, controller, auditor), so the page's own role check covers this panel.
 // It fetches the file itself (not a plain link) so a refusal from the server, such as a bad date range, is shown as text
@@ -32,7 +32,7 @@ export function JournalExport() {
       setTimeout(() => URL.revokeObjectURL(a.href), 0);
       setSaved(name);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

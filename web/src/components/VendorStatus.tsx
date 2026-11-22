@@ -7,7 +7,7 @@ import { Panel } from "@/components/Panel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAction } from "@/hooks/queries";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { can } from "@/lib/roles";
 import type { Me, VendorDetail } from "@/lib/types";
 
@@ -24,7 +24,7 @@ export function VendorStatus({ v, me }: { v: VendorDetail; me: Me }) {
   const run = (p: Promise<unknown>, ok: string) => {
     setError(null);
     p.then(() => { notify.money(ok); setReason(""); }).catch((e: Error) => {
-      setError(e.message);
+      setError(errorText(e));
       void qc.invalidateQueries({ queryKey: keys[0]! }); // a refusal usually means the page is out of date: show the vendor as it is now
     });
   };

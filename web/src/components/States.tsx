@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { AlertOctagon, Inbox, Lock, Loader2 } from "lucide-react";
-import { ApiError } from "@/lib/api";
+import { AlertOctagon, Inbox, Lock, Loader2, SearchX } from "lucide-react";
+import { ApiError, errorText } from "@/lib/api";
 
 export function Loading({ label = "Loading…" }: { label?: string }) {
   return (
@@ -21,9 +21,21 @@ export function Forbidden() {
   );
 }
 
-export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+export function NotFoundState({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2 surface rounded-xl py-12 text-center">
+      <SearchX className="h-6 w-6 text-muted-foreground" aria-hidden />
+      <p className="font-semibold text-foreground">{message}</p>
+      <Link to="/" className="mt-1 text-sm font-semibold text-primary underline-offset-4 hover:underline">Go Home →</Link>
+    </div>
+  );
+}
+
+// missing = the plain sentence for a 404 on a page about one thing, e.g. "That invoice doesn't exist or you can't see it."
+export function ErrorState({ error, onRetry, missing }: { error: unknown; onRetry?: () => void; missing?: string | undefined }) {
   if (error instanceof ApiError && error.status === 403) return <Forbidden />;
-  const msg = error instanceof Error ? error.message : String(error);
+  if (error instanceof ApiError && error.status === 404 && missing) return <NotFoundState message={missing} />;
+  const msg = errorText(error);
   return (
     <div role="alert" className="flex items-start gap-3 rounded-xl border border-bad-foreground/30 bg-bad p-4 text-bad-foreground">
       <AlertOctagon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
@@ -48,8 +60,8 @@ export function Empty({ title, children, to, linkLabel }: { title: string; child
 }
 
 /** Renders loading / error / content for a query. */
-export function QueryView<D>({ q, children }: { q: { isPending: boolean; error: unknown; data: D | undefined; refetch: () => unknown }; children: (d: D) => ReactNode }) {
+export function QueryView<D>({ q, children, missing }: { missing?: string | undefined; q: { isPending: boolean; error: unknown; data: D | undefined; refetch: () => unknown }; children: (d: D) => ReactNode }) {
   if (q.isPending) return <Loading />;
-  if (q.error) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
+  if (q.error) return <ErrorState error={q.error} onRetry={() => q.refetch()} missing={missing} />;
   return <>{children(q.data as D)}</>;
 }
