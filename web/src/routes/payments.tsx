@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Download } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
@@ -20,7 +20,7 @@ import type { Me, Payment, ReadyToPay } from "@/lib/types";
 
 export const Route = createFileRoute("/payments")({
   ssr: false,
-  head: () => pageHead("Payments", "Prepare, release and download Harborline vendor payments."),
+  head: () => pageHead("Payments", "Schedule, release and download Harborline vendor payments."),
   component: () => <AppShell>{(me) => (can(me.role, "payments") ? <PaymentsPage me={me} /> : <Forbidden />)}</AppShell>,
 });
 
@@ -28,10 +28,10 @@ const LIMIT = 25;
 const REFRESH = [["payments"], ["invoices"], ["invoice-counts"], ["dashboard"]];
 
 function PaymentsPage({ me }: { me: Me }) {
-  const canPrepare = can(me.role, "prepare");
+  const canSchedule = can(me.role, "prepare");
   const [readyAt, setReadyAt] = useState(0);
   const [allAt, setAllAt] = useState(0);
-  const ready = useReadyToPay({ limit: LIMIT, offset: readyAt }, canPrepare);
+  const ready = useReadyToPay({ limit: LIMIT, offset: readyAt }, canSchedule);
   const payments = usePayments({ limit: LIMIT, offset: allAt });
   return (
     <>
@@ -43,7 +43,7 @@ function PaymentsPage({ me }: { me: Me }) {
             <Button variant="outline" asChild><a href={downloadUrl("/payments/cheques")} download="cheques.json"><Download aria-hidden />Cheques</a></Button>
           </>
         )} />
-      {canPrepare && (
+      {canSchedule && (
         <section className="mb-10">
           <h2 className="mb-3 text-xl font-bold">Ready to pay</h2>
           <QueryView q={ready}>
@@ -76,18 +76,18 @@ function PaymentsPage({ me }: { me: Me }) {
 }
 
 function ReadyRow({ r }: { r: ReadyToPay }) {
-  // Prepare schedules the payment with the vendor's preferred method (shown here as the server's own suggestion and reason).
+  // Schedule payment schedules the payment with the vendor's preferred method (shown here as the server's own suggestion and reason).
   const prep = useAction(() => api.preparePayment(r.invoiceId), [...REFRESH, ["invoice", String(r.invoiceId)]]);
   const go = () => prep.mutateAsync(undefined)
-    .then((p) => toast.success(`Payment prepared for ${r.invoiceNumber}, scheduled ${formatDate(p.scheduledDate)}`, p.notes.length ? { description: p.notes.join(" ") } : {}))
-    .catch((e: Error) => toast.error(e.message));
+    .then((p) => notify.money(`Payment scheduled for ${r.invoiceNumber} on ${formatDate(p.scheduledDate)}`, p.notes.length ? { description: p.notes.join(" ") } : {}))
+    .catch((e: Error) => notify.error(e.message));
   return (
     <tr>
       <Td><Link to="/invoices/$id" params={{ id: String(r.invoiceId) }} className="font-semibold text-primary hover:underline">{r.invoiceNumber || NOT_READ_YET}</Link></Td>
       <Td>{r.vendorName ?? "—"}</Td><Td className="num">{formatDate(r.dueDate)}</Td>
       <Td>{r.suggestedMethod.label}<div className="text-xs text-muted-foreground">{r.suggestedMethod.reason}</div></Td>
       <Td right><Money cents={r.totalCents} currency={r.currency} className="font-semibold" />{r.earlyPayDiscountCents !== null && <div className="text-xs text-muted-foreground">Early-pay discount <Money cents={r.earlyPayDiscountCents} currency={r.currency} /></div>}</Td>
-      <Td><Button disabled={prep.isPending} onClick={go}>{prep.isPending ? "Preparing…" : "Prepare"}</Button></Td>
+      <Td className="max-w-56"><Button disabled={prep.isPending} onClick={go}>{prep.isPending ? "Scheduling…" : "Schedule payment"}</Button><p className="mt-1.5 text-xs text-muted-foreground">Picks the payment method and date. No money moves until someone releases it.</p></Td>
     </tr>
   );
 }
@@ -98,8 +98,8 @@ function PaymentRow({ p, canRelease }: { p: Payment; canRelease: boolean }) {
   const rel = useAction(() => api.releaseScheduled(p.id), [...REFRESH, ["invoice", String(p.invoiceId)]]);
   const vendor = p.vendorName ?? "the vendor";
   const go = () => rel.mutateAsync(undefined)
-    .then((r) => toast.success(`Released ${formatMoney(p.amountCents, p.currency)} to ${vendor} by ${p.methodLabel}. Reference ${r.reference}`, { duration: Infinity, closeButton: true }))
-    .catch((e: Error) => toast.error(e.message, { duration: Infinity, closeButton: true }));
+    .then((r) => notify.money(`Released ${formatMoney(p.amountCents, p.currency)} to ${vendor} by ${p.methodLabel}. Reference ${r.reference}`))
+    .catch((e: Error) => notify.error(e.message));
   return (
     <tr>
       <Td><Link to="/invoices/$id" params={{ id: String(p.invoiceId) }} className="font-semibold text-primary hover:underline">{p.invoiceNumber || NOT_READ_YET}</Link></Td>

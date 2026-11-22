@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { QueryView, Empty, Forbidden } from "@/components/States";
@@ -60,7 +60,7 @@ function InboxRow({ item }: { item: InboxItem }) {
       <Td className="max-w-xs">{item.flagCount === 0 || !item.topFlag ? <span className="text-muted-foreground">None</span> : <span><span className={blocking ? "font-semibold text-bad-foreground" : "font-semibold text-warn-foreground"}>{plural(item.flagCount, "flag")}{blocking ? " · blocking" : ""}</span> <span className="text-sm">— {item.topFlag.message}</span></span>}</Td>
       <Td className="text-sm">{item.reason}{item.delegatedFromId !== null && <span className="text-muted-foreground"> · delegated to you</span>}</Td>
       <Td>{blocking ? <Link to="/invoices/$id" params={{ id }} className="text-sm font-semibold text-primary hover:underline">Review</Link> :
-        <Button disabled={approve.isPending} onClick={() => approve.mutateAsync(undefined).then(() => toast.success(`Approved ${item.invoiceNumber}`)).catch((e: Error) => toast.error(e.message))}>{approve.isPending ? "Approving…" : "Approve"}</Button>}</Td>
+        <Button disabled={approve.isPending} onClick={() => approve.mutateAsync(undefined).then(() => notify.money(`Approved ${item.invoiceNumber}`)).catch((e: Error) => notify.error(e.message))}>{approve.isPending ? "Approving…" : "Approve"}</Button>}</Td>
     </tr>
   );
 }

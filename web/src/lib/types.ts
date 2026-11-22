@@ -119,6 +119,8 @@ export interface InvoiceDetail {
   approvalChain: ApprovalChainStep[];
   approvals: ApprovalDecision[];
   payments: InvoicePayment[];
+  // The latest exception resolution (from the audit log); null when the invoice was never held. action is send_to_approval or reject.
+  resolution?: { byName: string; at: string; action: string; note: string } | null;
 }
 
 // GET /api/invoices/counts. Same visibility as the list, so each count equals that status's X-Total-Count.

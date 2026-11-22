@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Download } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { Pager } from "@/components/Pager";
@@ -48,7 +48,7 @@ function ReconPage({ me }: { me: Me }) {
       <PageHeader title="Reconciliation" subtitle="Payments matched against bank and card statements."
         actions={<div className="flex gap-2">
           <Button variant="outline" asChild><a href={downloadUrl(`/reconciliation?format=csv${category ? `&category=${category}` : ""}`)} download><Download aria-hidden />CSV</a></Button>
-          {can(me.role, "runReconciliation") && <Button disabled={run.isPending} onClick={() => run.mutateAsync().then((r) => toast.success(`Reconciliation saved: ${r.changed} payment${r.changed === 1 ? "" : "s"} changed status`)).catch((e: Error) => toast.error(e.message))}>{run.isPending ? "Running…" : "Run reconciliation"}</Button>}
+          {can(me.role, "runReconciliation") && <Button disabled={run.isPending} onClick={() => run.mutateAsync().then((r) => notify.info(`Reconciliation saved: ${r.changed} payment${r.changed === 1 ? "" : "s"} changed status`)).catch((e: Error) => notify.error(e.message))}>{run.isPending ? "Running…" : "Run reconciliation"}</Button>}
         </div>} />
       <QueryView q={q}>
         {(r) => (

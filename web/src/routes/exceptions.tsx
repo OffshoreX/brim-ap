@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
@@ -40,8 +40,8 @@ function ExceptionsPage({ me }: { me: Me }) {
   const other = useOtherInbox({ limit: LIMIT, offset: mailAt }, canMail);
   const importer = useAction(() => api.importInbox(), [...REFRESH, ["inbox-other"]]);
   const doImport = () => importer.mutateAsync(undefined)
-    .then((r) => toast.success(`Imported ${plural(r.imported, "new invoice")} from the inbox${r.skipped ? ` (${plural(r.skipped, "email")} already imported)` : ""}`, r.imported ? { description: "They arrive as Received. Open each one and choose Run processing." } : {}))
-    .catch((e: Error) => toast.error(e.message));
+    .then((r) => notify.info(`Imported ${plural(r.imported, "new invoice")} from the inbox${r.skipped ? ` (${plural(r.skipped, "email")} already imported)` : ""}`, r.imported ? { description: "They arrive as Received. Open each one and choose Run processing." } : {}))
+    .catch((e: Error) => notify.error(e.message));
 
   return (
     <>
@@ -95,7 +95,7 @@ function ExceptionCard({ item }: { item: ExceptionRow }) {
   const [note, setNote] = useState("");
   // One lock for both buttons: while a decision is in flight neither can be pressed, and a repeat is refused by the server (409).
   const resolve = useAction((a: "send_to_approval" | "reject") => api.resolveException(item.id, a, note), [...REFRESH, ["invoice", String(item.id)]]);
-  const go = (a: "send_to_approval" | "reject") => resolve.mutateAsync(a).then(() => toast.success(a === "reject" ? "Invoice rejected" : "Sent to approval")).catch((e: Error) => toast.error(e.message));
+  const go = (a: "send_to_approval" | "reject") => resolve.mutateAsync(a).then(() => notify.money(a === "reject" ? "Invoice rejected" : "Sent to approval")).catch((e: Error) => notify.error(e.message));
   return (
     <Panel>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">

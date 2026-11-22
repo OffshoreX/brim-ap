@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { Panel } from "@/components/Panel";
@@ -44,8 +44,8 @@ function VendorView({ v, me }: { v: VendorDetail; me: Me }) {
   const pending = v.bankChanges.find((c) => c.status === "pending");
   const bankValid = bank.institution.length === 3 && bank.transit.length === 5 && bank.account.length >= 4;
   const mine = pending?.changed_by_user_id === me.id; // looks only: the server refuses a self-verify with its own message
-  const done = (msg: string) => () => toast.success(msg);
-  const fail = (e: Error) => toast.error(e.message); // the server's own {error} text
+  const done = (msg: string) => () => notify.money(msg);
+  const fail = (e: Error) => notify.error(e.message); // the server's own {error} text
 
   return (
     <>
@@ -102,7 +102,7 @@ function VendorView({ v, me }: { v: VendorDetail; me: Me }) {
               <p className="text-xs text-muted-foreground">3-digit institution, 5-digit transit, account number. Nothing changes until someone else confirms by phone.</p>
               <ConfirmInline label="Request bank change" confirmLabel="Submit request" pending={req.isPending}
                 message={`Ask to change ${v.name}'s account to •••• ${bank.account.slice(-4) || "????"}?`}
-                onConfirm={() => { if (!bankValid) { toast.error("Check the institution, transit and account numbers"); return; } req.mutateAsync(undefined).then(() => { toast.success("Bank change requested"); setBank({ ...bank, institution: "", transit: "", account: "" }); }).catch(fail); }} />
+                onConfirm={() => { if (!bankValid) { notify.error("Check the institution, transit and account numbers"); return; } req.mutateAsync(undefined).then(() => { notify.money("Bank change requested"); setBank({ ...bank, institution: "", transit: "", account: "" }); }).catch(fail); }} />
             </div>
           ) : <p className="text-sm text-muted-foreground">No pending bank changes.</p>}
         </Panel>

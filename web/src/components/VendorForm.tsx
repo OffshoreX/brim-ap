@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +25,7 @@ export function VendorForm({ open, onOpenChange }: { open: boolean; onOpenChange
     e.preventDefault();
     setError(null);
     create.mutateAsync(vendorBody(f)).then((v) => {
-      toast.success(`${v.name} added. It is pending review until someone else approves it.`);
+      notify.info(`${v.name} added. It is pending review until someone else approves it.`);
       setF(EMPTY);
       onOpenChange(false);
       void navigate({ to: "/vendors/$id", params: { id: String(v.id) } });

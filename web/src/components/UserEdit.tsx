@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { ConfirmInline } from "@/components/ConfirmInline";
 import { ErrorText } from "@/components/ErrorText";
 import { Input } from "@/components/ui/input";
@@ -68,7 +68,7 @@ export function UserEdit({ user, users, onClose }: { user: ManagedUser; users: M
           <ErrorText error={error} />
           {changed.length === 0 ? <p className="text-sm text-muted-foreground">Nothing changed yet.</p> : (
             <ConfirmInline label="Save changes" confirmLabel="Yes, save" pending={save.isPending || cents === null} message={`Change ${changed.join(", ")} for ${user.name}?`}
-              onConfirm={() => { setError(null); save.mutateAsync(patch).then(() => { toast.success(`${user.name} updated`); onClose(); }).catch((e: Error) => setError(e.message)); }} />
+              onConfirm={() => { setError(null); save.mutateAsync(patch).then(() => { notify.info(`${user.name} updated`); onClose(); }).catch((e: Error) => setError(e.message)); }} />
           )}
         </div>
       </SheetContent>

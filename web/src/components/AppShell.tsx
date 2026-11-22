@@ -54,7 +54,8 @@ export function AppShell({ children }: { children: (me: Me) => ReactNode }) {
   // POST /api/logout clears the HttpOnly session cookie (the page cannot), then we drop cached data and go to /login.
   async function signOut() {
     setSigningOut(true);
-    try { await api.logout(); } finally { qc.clear(); setSigningOut(false); void navigate({ to: "/login" }); }
+    // Leave first, clear after: clearing while this shell is still mounted makes it re-ask /api/me and log a 401 on the login page.
+    try { await api.logout(); } finally { await navigate({ to: "/login" }); qc.clear(); setSigningOut(false); }
   }
 
   const items = NAV.filter((n) => !n.cap || can(user.role, n.cap));
