@@ -1,6 +1,7 @@
 import type { User } from "@/contracts";
 import { getDb } from "./db";
 import { INVOICE_STATUSES } from "./invoiceStatus";
+import { filterConds, SORTS, type InvoiceFilters } from "./invoiceFilters";
 import { DEFAULT_PAGE, type Page } from "./paging";
 import { parseFlags } from "./views";
 
@@ -29,7 +30,7 @@ type Row = {
 };
 
 // This is the only place that decides which invoices a role may see.
-function visibleWhere(user: User, status?: string): { where: string; args: unknown[] } {
+function visibleWhere(user: User, status?: string, f: InvoiceFilters = {}): { where: string; args: unknown[] } {
   const conds: string[] = [];
   const args: unknown[] = [];
   if (user.role === "employee") {
@@ -42,12 +43,15 @@ function visibleWhere(user: User, status?: string): { where: string; args: unkno
     conds.push("i.status = ?");
     args.push(status);
   }
+  const extra = filterConds(f); // search filters only narrow what the role may already see
+  conds.push(...extra.conds);
+  args.push(...extra.args);
   return { where: conds.length ? "WHERE " + conds.join(" AND ") : "", args };
 }
 
-export function countInvoices(user: User, status?: string): number {
-  const v = visibleWhere(user, status);
-  return (getDb().prepare(`SELECT COUNT(*) n FROM invoices i ${v.where}`).get(...v.args) as { n: number }).n;
+export function countInvoices(user: User, status?: string, f: InvoiceFilters = {}): number {
+  const v = visibleWhere(user, status, f);
+  return (getDb().prepare(`SELECT COUNT(*) n FROM invoices i LEFT JOIN vendors v ON v.id = i.vendor_id ${v.where}`).get(...v.args) as { n: number }).n;
 }
 
 // One query for every status chip. Same visibility as the list, so counts always match list totals.
@@ -60,14 +64,14 @@ export function invoiceCounts(user: User): { total: number; byStatus: Record<str
 }
 
 // Newest first, so a fresh upload is on page one.
-export function listInvoices(user: User, page: Page = DEFAULT_PAGE, status?: string): InvoiceListItem[] {
-  const v = visibleWhere(user, status);
+export function listInvoices(user: User, page: Page = DEFAULT_PAGE, status?: string, f: InvoiceFilters = {}): InvoiceListItem[] {
+  const v = visibleWhere(user, status, f);
   const rows = getDb()
     .prepare(
       `SELECT i.id, i.status, i.vendor_id, i.invoice_number, i.invoice_date, i.total_cents, i.currency, i.requester_id, i.source_file,
               v.name AS vendor_name, NULLIF(i.due_date, '') AS due_date, i.flags
        FROM invoices i LEFT JOIN vendors v ON v.id = i.vendor_id
-       ${v.where} ORDER BY i.id DESC LIMIT ? OFFSET ?`
+       ${v.where} ORDER BY ${SORTS[f.sort ?? "newest"]} LIMIT ? OFFSET ?`
     )
     .all(...v.args, page.limit, page.offset) as Row[];
   return rows.map((r) => ({

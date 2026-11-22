@@ -1,5 +1,6 @@
 import { handle, requireRole } from "@/server/authz";
 import { countInvoices, isInvoiceStatus, listInvoices } from "@/server/invoices";
+import { parseInvoiceFilters } from "@/server/invoiceFilters";
 import { pagedJson, parsePage } from "@/server/paging";
 
 export const GET = (request: Request) =>
@@ -9,5 +10,7 @@ export const GET = (request: Request) =>
     if (page instanceof Response) return page;
     const status = new URL(request.url).searchParams.get("status") ?? undefined;
     if (status !== undefined && !isInvoiceStatus(status)) return Response.json({ error: `Unknown status: ${status}` }, { status: 400 });
-    return pagedJson(listInvoices(user, page, status), countInvoices(user, status));
+    const filters = parseInvoiceFilters(new URL(request.url).searchParams);
+    if (typeof filters === "string") return Response.json({ error: filters }, { status: 400 });
+    return pagedJson(listInvoices(user, page, status, filters), countInvoices(user, status, filters));
   });
