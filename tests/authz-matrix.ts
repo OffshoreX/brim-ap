@@ -33,8 +33,12 @@ export const MATRIX: [string, string, Access][] = [
   ["exceptions/[id]/resolve",            "POST",  CLERK_UP],
   ["exceptions/historical",              "GET",   ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
   ["vendors",                            "GET",   ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
+  ["vendors",                            "POST",  CLERK_UP], // onboards a vendor as pending_review, no bank details
   ["vendors/[id]",                       "GET",   ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],
   ["vendors/[id]",                       "PATCH", ["ap_clerk", "controller_admin"]],
+  ["vendors/[id]/approve",               "POST",  ["finance_manager", "controller_admin"]], // not the creator (checked in vendorOnboarding.ts)
+  ["vendors/[id]/hold",                  "POST",  ["finance_manager", "controller_admin"]],
+  ["vendors/[id]/release-hold",          "POST",  ["finance_manager", "controller_admin"]],
   ["vendors/[id]/bank-change",           "POST",  CLERK_UP],
   ["vendors/[id]/bank-change/verify",    "POST",  ["finance_manager", "controller_admin"]],
   ["payments",                           "GET",   ["ap_clerk", "finance_manager", "controller_admin", "auditor"]],

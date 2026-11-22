@@ -11,7 +11,7 @@ export class VendorError extends Error {
 }
 
 // Non-bank fields a clerk may edit. Bank fields are deliberately absent: they only change via verify.
-const EDITABLE = ["name", "category", "default_gl_account", "address", "province_or_state", "country", "gst_hst_number", "qst_number", "payment_terms_days", "early_pay_discount", "preferred_payment_method", "accepts_card_payment", "ap_contact_email", "requires_po", "status"] as const;
+const EDITABLE = ["name", "category", "default_gl_account", "address", "province_or_state", "country", "gst_hst_number", "qst_number", "payment_terms_days", "early_pay_discount", "preferred_payment_method", "accepts_card_payment", "ap_contact_email", "requires_po"] as const; // no "status": it moves only through approve / hold / release-hold (vendorOnboarding.ts)
 
 // Never send the full account number to the browser: last 4 only.
 const last4 = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "").slice(-4);

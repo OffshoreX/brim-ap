@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS vendors (
   requires_po INTEGER CHECK (requires_po IN (0,1)),
   status TEXT,
   onboarded_at TEXT,
-  currency TEXT NOT NULL DEFAULT 'CAD' CHECK (currency IN ('CAD','USD'))
+  currency TEXT NOT NULL DEFAULT 'CAD' CHECK (currency IN ('CAD','USD')),
+  created_by_user_id INTEGER REFERENCES users(id) -- who onboarded it in the app; NULL for dataset vendors. The creator cannot approve it.
 );
 
 -- Every bank change is a new row, so a changed account can be spotted and traced.
