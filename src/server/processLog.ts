@@ -36,17 +36,19 @@ export function writeFindings(db: Db, invoiceId: number, step: string, findings:
   else writeStep(db, invoiceId, step, "flagged", findings.map(say).join("; "), durationMs);
 }
 
-// The extractor's reason can quote the model or the file, so it is never copied; it is only sorted into a fixed sentence.
+// The extractor's reason can quote the model, the file or a setting name, so it is never copied to a user: it is sorted into a
+// plain sentence, and the real reason goes to the server log only (the key is never in it).
 const SCHEMA_FAILURE = /^(bad amount|amount too large|bad quantity|not a JSON object|no line items|currency must be|credit note must|cached answer invalid|.+ (missing|must be|is not a valid date))/;
+const SAVED = "It was saved and needs review.";
 export function extractionFailure(reason: string): string {
-  if (SCHEMA_FAILURE.test(reason)) return "The extracted data failed schema validation, so the invoice goes to needs review";
-  if (reason.startsWith("model output was not valid JSON")) return "The model answer was not valid JSON, so the invoice goes to needs review";
-  if (reason.startsWith("document unreadable")) return "The model could not read the document, so the invoice goes to needs review";
-  if (reason.startsWith("unsupported file type")) return "The file type is not supported, so the invoice goes to needs review";
-  if (reason.startsWith("model API returned") || reason.startsWith("model returned no text")) return "The model call failed, so the invoice goes to needs review";
-  if (reason.startsWith("ANTHROPIC_API_KEY")) return "No model key is configured and the file was not in the saved answers, so the invoice goes to needs review";
-  if (reason.includes("no stored file")) return "The invoice has no stored file, so it goes to needs review";
-  return "Extraction failed, so the invoice goes to needs review";
+  console.error("invoice extraction failed:", reason);
+  if (SCHEMA_FAILURE.test(reason)) return `Some details on this invoice could not be read reliably. ${SAVED}`;
+  if (reason.startsWith("model output was not valid JSON") || reason.startsWith("model returned no text")) return `This invoice could not be read clearly. ${SAVED}`;
+  if (reason.startsWith("document unreadable")) return `This document could not be read. A clearer copy may help. ${SAVED}`;
+  if (reason.startsWith("unsupported file type")) return `This file type is not supported. ${SAVED}`;
+  if (reason.includes("no stored file")) return `This invoice has no stored file. ${SAVED}`;
+  // no key, model service errors and anything unexpected all read the same to the user
+  return `Reading this invoice is not available right now. ${SAVED}`;
 }
 
 export type ProcessStep = { id: number; step: string; status: StepStatus; detail: string; durationMs: number; createdAt: string };

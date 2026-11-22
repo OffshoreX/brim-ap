@@ -136,6 +136,16 @@ test("extraction failure goes to needs_review and nothing is guessed", async () 
   expect(actions(id)).toContain("invoice.extraction_failed");
 });
 
+test("a no-key extraction failure shows users only plain text: no setting names, env files or paths", async () => {
+  extractMock.mockResolvedValue({ status: "needs_review", reason: "ANTHROPIC_API_KEY is not set" });
+  const id = makeInvoice();
+  const body = JSON.stringify(await (await run(id)).json());
+  const everything = [body, JSON.stringify(log(id)), JSON.stringify(getDb().prepare("SELECT flags FROM invoices WHERE id = ?").get(id)),
+    JSON.stringify(getDb().prepare("SELECT after FROM audit_log WHERE action = 'invoice.extraction_failed'").all())].join("\n");
+  expect(everything).toContain("Reading this invoice is not available right now. It was saved and needs review.");
+  expect(everything).not.toMatch(/ANTHROPIC|SESSION_SECRET|\.env|process\.env|\/Users\/|\/home\/|node_modules/);
+});
+
 test("an extractor that throws, or a missing file, also lands in needs_review", async () => {
   extractMock.mockRejectedValue(new Error("boom"));
   const a = makeInvoice("a.pdf");
@@ -501,14 +511,14 @@ describe("processing log", () => {
     const id = makeInvoice();
     await run(id);
     expect(log(id).map(({ step, status, detail }) => ({ step, status, detail }))).toEqual([
-      { step: "extract", status: "failed", detail: "The extracted data failed schema validation, so the invoice goes to needs review" },
+      { step: "extract", status: "failed", detail: "Some details on this invoice could not be read reliably. It was saved and needs review." },
       { step: "approval_routing", status: "skipped", detail: "Not routed to an approver: the invoice needs review first" },
     ]);
     expect(row(id).status).toBe("needs_review");
   });
 
   test("a missing model key and an unsupported file type get their own plain sentences", async () => {
-    for (const [reason, text] of [["ANTHROPIC_API_KEY is not set", "No model key is configured"], ["unsupported file type text/plain", "The file type is not supported"]]) {
+    for (const [reason, text] of [["ANTHROPIC_API_KEY is not set", "Reading this invoice is not available right now"], ["unsupported file type text/plain", "This file type is not supported"]]) {
       extractMock.mockResolvedValue({ status: "needs_review", reason });
       const id = makeInvoice();
       await run(id);

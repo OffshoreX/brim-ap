@@ -67,10 +67,9 @@ test("without policies there are no thresholds, and loading them fails instead o
 });
 
 test("rejects non-integer, negative, missing and out-of-order amounts with 400; unknown id 404", async () => {
-  const [fin, ctrl] = await list();
+  const [fin] = await list();
   for (const bad of [{ over_cents: 1.5 }, { over_cents: -1 }, { over_cents: "5" }, {}, { over_cents: 5_000_001 }])
     expect((await call(PUT, admin(), bad, fin.id)).status).toBe(400); // 5,000,001 would pass the controller level
-  expect((await call(PUT, admin(), { over_cents: 999 }, ctrl.id)).status).toBe(400); // below finance
   expect((await call(PUT, admin(), { over_cents: 1 }, 999)).status).toBe(404);
   expect(await list()).toMatchObject([{ over_cents: 1_000_000 }, { over_cents: 5_000_000 }, { over_cents: 25_000_000 }]);
 });
@@ -83,4 +82,21 @@ test("an edit writes an audit row with before, after and who", async () => {
   expect(last).toMatchObject({ action: "approval_rule.update", actor_id: 1 });
   expect(JSON.parse(last.before!).over_cents).toBe(1_000_000);
   expect(JSON.parse(last.after!).over_cents).toBe(1_500_000);
+});
+
+test("a controller cannot edit their own tier or the CFO tier above it: 403, nothing changes, nothing audited", async () => {
+  const [, ctrl, cfo] = await list();
+  const before = audits().length;
+  for (const r of [ctrl, cfo]) {
+    const res = await call(PUT, admin(), { over_cents: r.over_cents + 1 }, r.id);
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toBe("This rule applies to your own role. Another controller reviews changes to it.");
+  }
+  expect((await list()).map((r) => r.over_cents)).toEqual([1_000_000, 5_000_000, 25_000_000]);
+  expect(audits()).toHaveLength(before);
+});
+
+test("the finance tier stays editable by a controller (the audit row above records before and after)", async () => {
+  const [fin] = await list();
+  expect((await call(PUT, admin(), { over_cents: 2_000_000 }, fin.id)).status).toBe(200);
 });

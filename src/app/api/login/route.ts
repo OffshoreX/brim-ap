@@ -4,12 +4,16 @@ import { getDb } from "@/server/db";
 import { checkOrigin } from "@/server/security";
 import { writeAudit } from "@/server/audit";
 import { attemptLogin, clientIp, personaPickerEnabled } from "@/server/login";
-import { sessionCookie } from "@/server/session";
+import { SessionUnavailable, sessionCookie } from "@/server/session";
 
 export const POST = (request: Request) =>
   handle(() => {
     checkOrigin(request); // login is public, so this is the only guard against a cross-site login
-    return login(request);
+    return login(request).catch((e) => {
+      if (!(e instanceof SessionUnavailable)) throw e;
+      console.error("login unavailable:", e.message);
+      return Response.json({ error: "Sign-in is not available right now. Ask an administrator." }, { status: 503 });
+    });
   });
 
 async function login(request: Request) {

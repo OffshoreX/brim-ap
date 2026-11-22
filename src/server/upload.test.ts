@@ -90,7 +90,7 @@ test("five files: good, bad type, same bytes, extraction failure, near-duplicate
     ["scan.pdf", 102, "needs_review", null, ["extraction_failed"]],
     ["near.pdf", 103, "pending_approval", null, ["DUPLICATE_NEAR"]],
   ]);
-  expect(results[3].flags[0].message).toBe("model output was not valid JSON");
+  expect(results[3].flags[0].message).toBe("This invoice could not be read clearly. It was saved and needs review.");
   expect(count("SELECT COUNT(*) n FROM invoices WHERE id > 100")).toBe(3);
   expect(extractMock).toHaveBeenCalledTimes(3); // the copy is never read by the model
 });

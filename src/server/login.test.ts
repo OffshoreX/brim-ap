@@ -120,3 +120,18 @@ test("setDemoPasswords gives every user the demo password (DEMO_PASSWORD overrid
   setDemoPasswords(getDb());
   expect(try_("lea@x.example", "custom-demo").status).toBe(200);
 });
+
+test("a missing SESSION_SECRET gives a plain message, not a 500 with the setting name", async () => {
+  const saved = process.env.SESSION_SECRET;
+  delete process.env.SESSION_SECRET;
+  const err = console.error;
+  console.error = () => {}; // the real cause is logged server-side; keep test output quiet
+  try {
+    const res = await loginRoute(new Request("http://x/api/login", { method: "POST", body: JSON.stringify({ email: "erin@x.example", password: PW }) }));
+    expect(await res.json()).toEqual({ error: "Sign-in is not available right now. Ask an administrator." });
+    expect(res.status).toBe(503);
+  } finally {
+    console.error = err;
+    process.env.SESSION_SECRET = saved;
+  }
+});

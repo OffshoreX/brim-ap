@@ -264,9 +264,10 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     };
 
     if (extracted.status !== "ok") {
-      step("extract", "failed", extractionFailure(extracted.reason), extractMs);
-      writeAudit({ actorId, action: "invoice.extraction_failed", entity: "invoice", entityId: invoiceId, after: { reason: extracted.reason } });
-      return finish([error("extraction_failed", extracted.reason)], null);
+      const plain = extractionFailure(extracted.reason); // the raw reason is logged server-side only
+      step("extract", "failed", plain, extractMs);
+      writeAudit({ actorId, action: "invoice.extraction_failed", entity: "invoice", entityId: invoiceId, after: { reason: plain } });
+      return finish([error("extraction_failed", plain)], null);
     }
     const x: ExtractedInvoice = cleanDeep(extracted.invoice); // bidi controls removed from everything the UI will show
     step(
