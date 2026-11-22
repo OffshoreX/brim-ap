@@ -101,7 +101,7 @@ test("persona picker is off by default: login by userId and /api/users both 404 
   const res = await post({ userId: 1 });
   expect(res.status).toBe(404);
   expect(res.headers.get("set-cookie")).toBeNull();
-  expect(usersRoute().status).toBe(404);
+  expect(usersRoute(new Request("http://x/api/users")).status).toBe(404);
 });
 
 test("persona picker works again with DEMO_PERSONA_PICKER=1", async () => {
@@ -109,7 +109,7 @@ test("persona picker works again with DEMO_PERSONA_PICKER=1", async () => {
   const res = await post({ userId: 1 });
   expect(res.status).toBe(200);
   expect(res.headers.get("set-cookie")).toMatch(/^session=1\./);
-  expect(usersRoute().status).toBe(200);
+  expect(usersRoute(new Request("http://x/api/users")).status).toBe(200);
 });
 
 test("setDemoPasswords gives every user the demo password (DEMO_PASSWORD overrides the fallback)", () => {
