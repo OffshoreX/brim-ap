@@ -4,11 +4,11 @@ Read this first. Every agent in this repo follows it. The human is Ulysse (the l
 
 ## 0. Project
 
-- Name: brim-ap (placeholder, rename later)
+- Name: Harborline AP (repo: brim-ap)
 - Pitch: accounts payable automation for Harborline Logistics on the Brim business card platform. Invoice in, extracted, coded, validated, approved, paid (simulated), audited.
 - Event: McGill CodeJam 16, Brim track. Code started after 7:00 PM Friday Nov 20 2026. Hard freeze: 12:00 PM Sunday Nov 22. Final push by 11:30 AM.
 - Judging: required features 40%, bonus features 15% (only scored if required ones work), clean UI 20%, technical depth 25% (live Q&A).
-- Demo path: TBD after the scope grill. Every ticket serves this path first.
+- Demo path: upload an invoice, watch the process log, see flags with reasons, approve through the chain, schedule and release payment by a different person, then verify the audit chain.
 - Stack: TypeScript, Next.js API and SQLite on the server. The user interface is moving to web/ (Vite, TanStack Router, Tailwind, shadcn/ui, first drafted in Lovable). web/ is its own app with its own package.json; it talks to the server only through /api (dev proxy to localhost:3000). The old pages in src/app stay until web/ replaces them.
 - Contracts file: src/contracts.ts (shared types and API shapes). Created in ticket 1.
 
