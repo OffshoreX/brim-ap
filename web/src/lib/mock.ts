@@ -140,7 +140,20 @@ export async function mockRequest(method: string, fullPath: string, body: unknow
   if (path === "/invoices" && method === "GET") {
     const st = q.get("status");
     if (st && !(INVOICE_STATUSES as readonly string[]).includes(st)) return { status: 400, error: `Unknown status: ${st}` };
-    const all = s.invoices.filter((i) => !st || i.status === st).sort((a, b) => b.id - a.id).map(listItem); // newest first, like the server
+    const text = q.get("q")?.toLowerCase();
+    const num = (k: string) => (q.get(k) ? Number(q.get(k)) : undefined);
+    const [vid, min, max] = [num("vendorId"), num("minCents"), num("maxCents")];
+    const inRange = (v: string | null, lo: string | null, hi: string | null) => (!lo || (!!v && v >= lo)) && (!hi || (!!v && v <= hi));
+    const sorts: Record<string, (a: T.InvoiceDetail, b: T.InvoiceDetail) => number> = {
+      oldest: (a, b) => a.id - b.id, amount_desc: (a, b) => b.totalCents - a.totalCents, amount_asc: (a, b) => a.totalCents - b.totalCents,
+      due_asc: (a, b) => (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"),
+    };
+    const all = s.invoices
+      .filter((i) => (!st || i.status === st) && (!vid || i.vendorId === vid) && (min === undefined || i.totalCents >= min) && (max === undefined || i.totalCents <= max)
+        && (!text || (i.invoiceNumber ?? "").toLowerCase().includes(text) || (i.vendorName ?? "").toLowerCase().includes(text))
+        && inRange(i.invoiceDate, q.get("from"), q.get("to")) && inRange(i.dueDate, q.get("dueFrom"), q.get("dueTo")))
+      .sort(sorts[q.get("sort") ?? ""] ?? ((a, b) => b.id - a.id)) // newest first by default, like the server
+      .map(listItem);
     const limit = Math.min(Number(q.get("limit") ?? 50), 200);
     const offset = Number(q.get("offset") ?? 0);
     return { status: 200, data: all.slice(offset, offset + limit), total: all.length };

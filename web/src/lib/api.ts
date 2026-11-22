@@ -1,6 +1,7 @@
 // The ONLY place the app talks to the network. Relative "/api" paths, cookies included.
 // When VITE_USE_MOCKS === "true" requests are answered by src/lib/mock.ts instead.
 import type * as T from "./types";
+import type { InvoiceQuery } from "./invoiceFilters";
 
 export const USE_MOCKS = import.meta.env["VITE_USE_MOCKS"] === "true";
 
@@ -100,8 +101,9 @@ export const api = {
   },
   dashboard: () => get<T.Dashboard>("/dashboard"),
 
+  // Filters (q, vendorId, minCents, maxCents, from, to, dueFrom, dueTo, sort) are applied in SQL by the server; X-Total-Count is the matching count.
   // GET /api/invoices rows carry vendorName, dueDate and flagCount from one server query: no per-row detail calls.
-  invoices: (p: { status?: string | undefined; limit: number; offset: number }) => list<T.InvoiceRow>(`/invoices${qs(p)}`),
+  invoices: (p: InvoiceQuery) => list<T.InvoiceRow>(`/invoices${qs(p)}`),
   invoiceCounts: () => get<T.InvoiceCounts>("/invoices/counts"),
   invoice: (id: string | number) => get<T.InvoiceDetail>(`/invoices/${id}`),
   invoiceTrail: (id: string | number) => get<T.TrailEntry[]>(`/invoices/${id}/trail`),
