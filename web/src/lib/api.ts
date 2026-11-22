@@ -100,21 +100,8 @@ export const api = {
   },
   dashboard: () => get<T.Dashboard>("/dashboard"),
 
-  // GET /api/invoices rows carry only vendorId: no vendor name, due date or flags. /api/vendors is closed to employees and
-  // approvers, so each row's own invoice detail supplies them instead (every role may read the invoices it can list).
-  // A failed lookup leaves nulls, never a broken page. 25 rows per page = 25 small calls; the real fix is for the list
-  // endpoint to return these fields (server change, noted in the PR).
-  invoices: async (p: { status?: string | undefined; limit: number; offset: number }): Promise<T.Paged<T.InvoiceRow>> => {
-    const page = await list<T.InvoiceListItem>(`/invoices${qs(p)}`);
-    const details = await Promise.allSettled(page.items.map((i) => get<T.InvoiceDetail>(`/invoices/${i.id}`)));
-    const items = page.items.map((i, k): T.InvoiceRow => {
-      const d = details[k];
-      return d && d.status === "fulfilled"
-        ? { ...i, vendorName: d.value.vendorName, dueDate: d.value.dueDate, flagCount: d.value.flags.length }
-        : { ...i, vendorName: null, dueDate: null, flagCount: null };
-    });
-    return { items, total: page.total };
-  },
+  // GET /api/invoices rows carry vendorName, dueDate and flagCount from one server query: no per-row detail calls.
+  invoices: (p: { status?: string | undefined; limit: number; offset: number }) => list<T.InvoiceRow>(`/invoices${qs(p)}`),
   invoiceCounts: () => get<T.InvoiceCounts>("/invoices/counts"),
   invoice: (id: string | number) => get<T.InvoiceDetail>(`/invoices/${id}`),
   invoiceTrail: (id: string | number) => get<T.TrailEntry[]>(`/invoices/${id}/trail`),

@@ -9,6 +9,9 @@ export function formatDate(iso: string | null | undefined): string {
   if (Number.isNaN(d.getTime())) return iso;
   return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "short", day: "numeric" }).format(d);
 }
+// Invoices that have not been through processing have no number or vendor yet. Never render an empty cell for them.
+export const NOT_READ_YET = "Not read yet";
+export const RUN_PROCESSING_HINT = "Run processing on the invoice page";
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);

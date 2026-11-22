@@ -107,7 +107,7 @@ const newInvoice = (s: Store): T.InvoiceDetail => {
   return inv;
 };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const listItem = (i: T.InvoiceDetail): T.InvoiceListItem => ({ id: i.id, status: i.status, vendorId: i.vendorId, invoiceNumber: i.invoiceNumber, invoiceDate: i.invoiceDate, totalCents: i.totalCents, currency: i.currency, requesterId: i.requesterId, sourceFile: i.sourceFile });
+const listItem = (i: T.InvoiceDetail): T.InvoiceListItem => ({ id: i.id, status: i.status, vendorId: i.vendorId, invoiceNumber: i.invoiceNumber, invoiceDate: i.invoiceDate, totalCents: i.totalCents, currency: i.currency, requesterId: i.requesterId, sourceFile: i.sourceFile, vendorName: i.vendorName, dueDate: i.dueDate, flagCount: i.flags.length });
 
 const PIPELINE = ["received_file", "read_text", "matched_vendor", "extracted_lines", "checked_duplicates", "checked_bank", "applied_rules"];
 const stepsFor = (i: T.InvoiceDetail, n: number): T.ProcessStep[] =>

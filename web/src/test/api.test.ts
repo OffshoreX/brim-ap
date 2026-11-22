@@ -27,17 +27,15 @@ describe("api adapters", () => {
     await expect(api.login("a@b", "nope")).rejects.toBeInstanceOf(ApiError);
   });
 
-  it("pages the invoice list from X-Total-Count and fills vendor name and due date from each detail", async () => {
-    const row = { id: 7, status: "paid", vendorId: 2, invoiceNumber: "A-1", invoiceDate: "2026-10-01", totalCents: 1000, currency: "CAD", requesterId: 1, sourceFile: null };
-    stubFetch({
-      "/api/invoices?status=paid&limit=25&offset=0": [200, [row, { ...row, id: 8 }], { "X-Total-Count": "394" }],
-      "/api/invoices/7": [200, { vendorName: "Acme", dueDate: "2026-10-31", flags: [{}, {}] }],
-      // invoice 8 has no detail (404): the row must survive with nulls
-    });
+  it("pages the invoice list from X-Total-Count and makes one call, reading the new list fields", async () => {
+    const row = { id: 7, status: "paid", vendorId: 2, invoiceNumber: "A-1", invoiceDate: "2026-10-01", totalCents: 1000, currency: "CAD", requesterId: 1, sourceFile: null, vendorName: "Acme", dueDate: "2026-10-31", flagCount: 2 };
+    const unread = { ...row, id: 8, status: "received", vendorId: null, invoiceNumber: "", invoiceDate: "", vendorName: null, dueDate: null, flagCount: 0, sourceFile: "a.pdf" };
+    const calls = stubFetch({ "/api/invoices?status=paid&limit=25&offset=0": [200, [row, unread], { "X-Total-Count": "394" }] });
     const page = await api.invoices({ status: "paid", limit: 25, offset: 0 });
     expect(page.total).toBe(394);
     expect(page.items[0]).toMatchObject({ vendorName: "Acme", dueDate: "2026-10-31", flagCount: 2 });
-    expect(page.items[1]).toMatchObject({ id: 8, vendorName: null, dueDate: null, flagCount: null });
+    expect(page.items[1]).toMatchObject({ id: 8, vendorName: null, dueDate: null, sourceFile: "a.pdf" });
+    expect(calls).toHaveLength(1); // no per-row /invoices/:id calls
   });
 
   it("sends past-tense decisions and a payment id for release, with an idempotency key on release", async () => {

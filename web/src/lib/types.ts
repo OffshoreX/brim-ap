@@ -26,7 +26,7 @@ export interface Flag {
   severity: FlagSeverity;
 }
 
-// One row of GET /api/invoices (newest first). The server sends no vendor name or due date here.
+// One row of GET /api/invoices (newest first). vendorName and dueDate are null until processing has read the invoice.
 export interface InvoiceListItem {
   id: number;
   status: InvoiceStatus;
@@ -37,13 +37,11 @@ export interface InvoiceListItem {
   currency: string;
   requesterId: number | null;
   sourceFile: string | null;
-}
-// What the list page shows: the row plus fields api.ts fills in from the invoice detail (null if that call failed).
-export interface InvoiceRow extends InvoiceListItem {
   vendorName: string | null;
   dueDate: string | null;
-  flagCount: number | null;
+  flagCount: number;
 }
+export type InvoiceRow = InvoiceListItem;
 
 export interface InvoiceLine {
   lineNo: number;
