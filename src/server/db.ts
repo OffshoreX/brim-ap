@@ -22,6 +22,7 @@ const ADDED_COLUMNS: [string, string, string][] = [
   ["invoices", "ship_to_source", "TEXT CHECK (ship_to_source IN ('invoice','po_requester','requester','vendor','clerk'))"],
   ["users", "password_hash", "TEXT"],
   ["payments", "reconciliation_status", "TEXT CHECK (reconciliation_status IN ('matched','unmatched','ambiguous','amount_diff'))"],
+  ["vendors", "created_by_user_id", "INTEGER REFERENCES users(id)"],
   ["audit_log", "prev_hash", "TEXT"],
   ["audit_log", "row_hash", "TEXT"],
 ];
