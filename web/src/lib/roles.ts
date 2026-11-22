@@ -1,5 +1,5 @@
-// UI-only role gating: hides what a role can never use.
-// The server is the real enforcer — never rely on this for security.
+// UI-only role gating: hides what a role can never use. Each list below copies the requireRole(...) list of the matching API
+// route, so a button never shows for a call the server will refuse. The server is the real enforcer.
 import type { Role } from "./types";
 
 export const ROLE_LABEL: Record<Role, string> = {
@@ -25,6 +25,7 @@ export const CAN = {
   payments: R("ap_clerk", "finance_manager", "controller_admin", "auditor"),
   prepare: R("ap_clerk", "finance_manager", "controller_admin"),
   release: R("finance_manager", "controller_admin"),
+  reports: R("finance_manager", "controller_admin", "auditor"), // /api/reports/*
   downloads: R("finance_manager", "controller_admin", "auditor"),
   reconciliation: R("finance_manager", "controller_admin", "auditor"),
   vendors: R("ap_clerk", "finance_manager", "controller_admin", "auditor"),

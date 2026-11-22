@@ -38,8 +38,8 @@ function ApprovalsPage() {
 }
 
 function InboxRow({ item }: { item: InboxItem }) {
-  const approve = useAction(() => api.decide(item.id, "approve"), [["approvals"], ["invoice-counts"], ["invoices"]]);
-  const blocking = worstFlag(item.flags) === "block";
+  const approve = useAction(() => api.decide(item.id, "approved"), [["approvals"], ["invoice-counts"], ["invoices"]]);
+  const blocking = worstFlag(item.flags) === "error";
   const top = item.flags[0];
   return (
     <tr className="hover:bg-muted/50">
@@ -47,7 +47,7 @@ function InboxRow({ item }: { item: InboxItem }) {
       <Td className="num whitespace-nowrap">{formatDate(item.dueDate)}</Td>
       <Td right><Money cents={item.totalCents} currency={item.currency} className="font-semibold" /></Td>
       <Td right>{item.ageDays} d</Td>
-      <Td className="max-w-xs">{item.flags.length === 0 ? <span className="text-muted-foreground">None</span> : <span><span className={blocking ? "font-semibold text-bad-foreground" : "font-semibold text-warn-foreground"}>{plural(item.flags.length, "flag")}{blocking ? " · blocking" : ""}</span> <span className="text-sm">— {top?.reason}</span></span>}</Td>
+      <Td className="max-w-xs">{item.flags.length === 0 ? <span className="text-muted-foreground">None</span> : <span><span className={blocking ? "font-semibold text-bad-foreground" : "font-semibold text-warn-foreground"}>{plural(item.flags.length, "flag")}{blocking ? " · blocking" : ""}</span> <span className="text-sm">— {top?.message}</span></span>}</Td>
       <Td className="text-sm">{item.whyYou}</Td>
       <Td>{blocking ? <Link to="/invoices/$id" params={{ id: item.id }} className="text-sm font-semibold text-primary hover:underline">Review</Link> :
         <Button disabled={approve.isPending} onClick={() => approve.mutateAsync(undefined).then(() => toast.success(`Approved ${item.invoiceNumber}`)).catch((e: Error) => toast.error(e.message))}>{approve.isPending ? "Approving…" : "Approve"}</Button>}</Td>

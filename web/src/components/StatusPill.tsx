@@ -26,6 +26,8 @@ const MAP: Record<string, { tone: Tone; label: string }> = {
   processing: { tone: "info", label: "Processing" },
   running: { tone: "info", label: "Running" },
   waiting: { tone: "neutral", label: "Waiting" },
+  flagged: { tone: "warn", label: "Flagged" },
+  skipped: { tone: "neutral", label: "Skipped" },
 };
 const ICON = { ok: CheckCircle2, warn: AlertTriangle, bad: XCircle, info: Info, neutral: HelpCircle };
 const TONE: Record<Tone, string> = {
@@ -36,13 +38,14 @@ const TONE: Record<Tone, string> = {
   neutral: "bg-neutral text-neutral-foreground",
 };
 
-export function StatusPill({ status, className }: { status: string; className?: string }) {
+// label overrides the built-in wording when the server already sends a human label (for example a payment's statusLabel).
+export function StatusPill({ status, label, className }: { status: string; label?: string; className?: string }) {
   const m = MAP[status] ?? { tone: "neutral" as Tone, label: status.replace(/_/g, " ") || "Unknown" };
   const Icon = status === "processing" || status === "running" ? Loader2 : status === "waiting" ? Clock : ICON[m.tone];
   return (
     <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap", TONE[m.tone], className)}>
       <Icon className={cn("h-3.5 w-3.5", status === "processing" || status === "running" ? "animate-spin motion-reduce:animate-none" : "")} aria-hidden />
-      {m.label}
+      {label ?? m.label}
     </span>
   );
 }

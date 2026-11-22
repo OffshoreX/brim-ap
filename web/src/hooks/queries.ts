@@ -35,9 +35,9 @@ export const useReadyToPay = (enabled: boolean) => useQuery({ queryKey: ["paymen
 // GET /api/reconciliation
 export const useReconciliation = () => useQuery({ queryKey: ["reconciliation"], queryFn: api.reconciliation });
 // GET /api/reports/aging
-export const useAging = () => useQuery({ queryKey: ["reports", "aging"], queryFn: api.aging });
-// GET /api/reports/spend
-export const useSpend = () => useQuery({ queryKey: ["reports", "spend"], queryFn: api.spend });
+export const useAging = (enabled = true) => useQuery({ queryKey: ["reports", "aging"], queryFn: api.aging, enabled });
+// GET /api/reports/spend?limit=
+export const useSpend = (enabled = true) => useQuery({ queryKey: ["reports", "spend"], queryFn: () => api.spend(), enabled });
 // GET /api/reports/discounts
 export const useDiscounts = () => useQuery({ queryKey: ["reports", "discounts"], queryFn: api.discounts });
 // GET /api/vendors

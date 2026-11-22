@@ -24,15 +24,14 @@ function LoginPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
-  // POST /api/login — sets the HttpOnly session cookie
+  // POST /api/login — sets the HttpOnly session cookie; the server's own error text (wrong password, rate limit) is shown as is
   async function submit(e: FormEvent) {
     e.preventDefault();
     setPending(true);
     setError(null);
     try {
-      const me = await api.login(email, password);
-      qc.setQueryData(["me"], me);
-      await qc.invalidateQueries({ queryKey: ["me"] });
+      await api.login(email, password);
+      qc.clear(); // drop anything cached for the previous user; the shell then reads the full user from /api/me
       void navigate({ to: "/" });
     } catch (err) {
       setError(err);
