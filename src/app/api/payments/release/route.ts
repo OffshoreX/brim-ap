@@ -1,11 +1,13 @@
 import { handle, requireRole } from "@/server/authz";
 import { IdempotencyError } from "@/server/idempotency";
 import { PaymentError, releasePayment } from "@/server/payments";
+import { rateLimit } from "@/server/security";
 
 export const POST = (request: Request) =>
   handle(async () => {
     // Clerks and approvers never get past here; canRelease then checks size and separation of duties.
     const user = requireRole(request, ["finance_manager", "controller_admin"]);
+    rateLimit("release", user.id);
     const body = await request.json().catch(() => null);
     const paymentId = body?.paymentId;
     if (!Number.isInteger(paymentId)) return Response.json({ error: "paymentId must be an integer" }, { status: 400 });

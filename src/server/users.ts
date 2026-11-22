@@ -34,6 +34,8 @@ const isId = (v: unknown): v is number => Number.isInteger(v);
 
 export function updateUser(actor: User, id: number, patch: Record<string, unknown>) {
   const db = getDb();
+  // Nobody edits their own record, whatever the field (a controller once raised their own approval limit).
+  if (actor.id === id) throw new UserError(403, "Ask another controller");
   const keys = Object.keys(patch);
   if (keys.length === 0) throw new UserError(400, "Nothing to update");
   const bad = keys.filter((k) => !(EDITABLE as readonly string[]).includes(k));
@@ -50,10 +52,6 @@ export function updateUser(actor: User, id: number, patch: Record<string, unknow
       throw new UserError(400, "approval_limit_cents must be a whole number of cents, 0 or more");
 
     const next = { ...before, ...patch } as Row;
-
-    // A controller cannot lock themselves out or promote themselves; a different controller has to do it.
-    if (actor.id === id && (next.role !== before.role || next.status !== before.status))
-      throw new UserError(403, "You cannot change your own role or status. Ask another controller.");
 
     // The company must always have someone who can manage users.
     const wasController = before.role === "controller_admin" && before.status === "active";

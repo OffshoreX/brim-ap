@@ -108,3 +108,21 @@ test("send_to_approval builds the approval chain, and stays held when no one can
   expect(refused.status).toBe(409);
   expect((getDb().prepare("SELECT status FROM invoices WHERE id=2").get() as { status: string }).status).toBe("needs_review");
 });
+
+// --- T84: the clerk's note comes back on the invoice and in the trail, with the author's name ---
+import { GET as detail } from "@/app/api/invoices/[id]/route";
+import { GET as trail } from "@/app/api/invoices/[id]/trail/route";
+
+test.each(["send_to_approval", "reject"] as const)("%s note is on the invoice detail as resolution and in the trail with the author's name", async (action) => {
+  const ctx = { params: Promise.resolve({ id: "1" }) };
+  expect((await (await detail(req(3), ctx)).json()).resolution).toBeNull(); // nothing resolved yet
+  expect((await post(3, 1, { action, note: "checked with vendor" })).status).toBe(200);
+
+  const { resolution } = await (await detail(req(3), ctx)).json();
+  expect(resolution).toMatchObject({ note: "checked with vendor", byName: "Clerk", action });
+  expect(Number.isNaN(Date.parse(resolution.at))).toBe(false);
+
+  const rows = await (await trail(req(3), ctx)).json();
+  const row = rows.find((r: { action: string }) => r.action === "exception.resolve");
+  expect(row).toMatchObject({ actorName: "Clerk", after: { action, note: "checked with vendor" } });
+});

@@ -106,14 +106,15 @@ describe("validation (plain 400 messages)", () => {
 });
 
 describe("guards", () => {
-  test("a controller cannot change their own role or status (403), but may edit their own limit", async () => {
-    for (const body of [{ role: "employee" }, { status: "terminated" }, { status: "on_leave", delegate_user_id: APPR }]) {
+  test("nobody can change any field of their own record (403, Ask another controller); another controller can", async () => {
+    for (const body of [{ role: "employee" }, { status: "terminated" }, { approval_limit_cents: 100 }, { manager_id: null }, {}]) {
       const r = await patch(CTRL, CTRL, body);
       expect(r.status).toBe(403);
-      expect(r.body.error).toContain("your own role or status");
+      expect(r.body.error).toBe("Ask another controller");
     }
-    expect(row(CTRL)).toMatchObject({ role: "controller_admin", status: "active" });
-    expect((await patch(CTRL, CTRL, { approval_limit_cents: 100 })).status).toBe(200);
+    expect(row(CTRL)).toMatchObject({ role: "controller_admin", status: "active", approval_limit_cents: 0 });
+    expect(audits()).toHaveLength(0);
+    expect((await patch(CTRL2, CTRL, { approval_limit_cents: 100 })).status).toBe(200);
   });
 
   test("the last active controller cannot be demoted or terminated by anyone", async () => {

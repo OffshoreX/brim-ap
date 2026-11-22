@@ -1,11 +1,13 @@
 import { handle, requireRole } from "@/server/authz";
 import { IdempotencyError } from "@/server/idempotency";
 import { UploadError } from "@/server/files";
+import { rateLimit } from "@/server/security";
 import { uploadAndProcess } from "@/server/upload";
 
 export const POST = (request: Request) =>
   handle(async () => {
     const user = requireRole(request, ["employee", "ap_clerk", "controller_admin"]);
+    rateLimit("upload", user.id);
     const form = await request.formData().catch(() => null);
     if (!form) return Response.json({ error: "expected multipart form data" }, { status: 400 });
     const files = form.getAll("file").filter((f): f is File => typeof f !== "string");
