@@ -19,6 +19,8 @@ const MAP: Record<string, { tone: Tone; label: string }> = {
   outstanding: { tone: "warn", label: "Outstanding" },
   pending_verification: { tone: "warn", label: "Awaiting callback" },
   on_hold: { tone: "warn", label: "On hold" },
+  on_leave: { tone: "warn", label: "On leave" },
+  terminated: { tone: "neutral", label: "Terminated" },
   pending_review: { tone: "warn", label: "Pending review" },
   warn: { tone: "warn", label: "Warning" },
   rejected: { tone: "bad", label: "Rejected" },

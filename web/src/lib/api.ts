@@ -182,6 +182,12 @@ export const api = {
 
   // GET /api/vendors -> every vendor (56 in the dataset, no paging, no X-Total-Count). Closed to employees and approvers.
   vendors: () => get<T.Vendor[]>("/vendors"),
+  // POST /api/vendors creates a vendor as pending_review (clerk, finance manager, controller); the reply is the new vendor with bankChanges.
+  createVendor: (body: T.NewVendor) => post<T.VendorDetail>("/vendors", body, true),
+  // approve, hold and release-hold are finance manager and controller only. Approve is refused for the vendor's creator (403).
+  approveVendor: (id: number) => post<T.VendorDetail>(`/vendors/${id}/approve`, undefined, true),
+  holdVendor: (id: number, reason: string) => post<T.VendorDetail>(`/vendors/${id}/hold`, { reason }, true),
+  releaseVendorHold: (id: number) => post<T.VendorDetail>(`/vendors/${id}/release-hold`, undefined, true),
   // GET /api/vendors/:id -> the vendor row plus its bankChanges history (oldest first).
   vendor: (id: string | number) => get<T.VendorDetail>(`/vendors/${id}`),
   // POST /api/vendors/:id/bank-change: only creates a pending request; the vendor's account does not change yet.
@@ -196,7 +202,11 @@ export const api = {
   // GET /api/audit/verify (auditor and controller only) -> the chain walk: ok + rowCount + headHash, or where it broke and why.
   auditVerify: () => get<T.AuditVerify>("/audit/verify"),
   processLog: (limit: number) => get<T.ProcessStep[]>(`/process-log${qs({ limit })}`),
-  users: () => get<T.AppUser[]>("/users"),
+  // GET /api/users -> { users } for controller and auditor (everyone else gets 404). PATCH /api/users/:id is controller only.
+  adminUsers: async () => (await get<{ users: T.ManagedUser[] }>("/users")).users,
+  updateUser: async (id: number, patch: T.UserPatch) => (await raw(`/users/${id}`, { method: "PATCH", body: patch })).data as T.ManagedUser,
+  // GET /api/export/journal?from=&to= -> CSV text, or { error } with 400 (bad dates) or 500 (an invoice could not be balanced).
+  exportJournal: async (from: string, to: string) => String((await raw(`/export/journal${qs({ from, to })}`)).data),
   // GET /api/admin/approval-rules -> { rules: [{ id, policy_id, over_cents, extra_role }] } (controller only).
   approvalRules: async () => (await get<{ rules: T.ApprovalRule[] }>("/admin/approval-rules")).rules,
   // PUT /api/admin/approval-rules/:id with { over_cents } -> { rule }. Only the amount is editable; the server checks the levels still rise.

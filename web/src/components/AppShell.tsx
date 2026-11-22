@@ -3,7 +3,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, FileText, Upload, CheckSquare, AlertTriangle, Wallet, Building2, BarChart3, Scale,
-  ShieldCheck, Activity, Settings2, LogOut, PanelLeftClose, PanelLeftOpen, Anchor,
+  ShieldCheck, Activity, Settings2, Users, LogOut, PanelLeftClose, PanelLeftOpen, Anchor,
 } from "lucide-react";
 import { useMe } from "@/hooks/queries";
 import { api, ApiError } from "@/lib/api";
@@ -27,6 +27,7 @@ const NAV: { to: string; label: string; icon: typeof FileText; cap?: Capability 
   { to: "/audit", label: "Audit log", icon: ShieldCheck, cap: "audit" },
   { to: "/activity", label: "Activity log", icon: Activity, cap: "activity" },
   { to: "/admin", label: "Approval rules", icon: Settings2, cap: "admin" },
+  { to: "/users", label: "Users", icon: Users, cap: "admin" },
 ];
 
 export function LogoMark({ className }: { className?: string }) {

@@ -7,6 +7,7 @@ import { Panel } from "@/components/Panel";
 import { QueryView, Forbidden } from "@/components/States";
 import { StatusPill } from "@/components/StatusPill";
 import { ConfirmInline } from "@/components/ConfirmInline";
+import { VendorStatus } from "@/components/VendorStatus";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, Th, Td } from "@/components/Table";
@@ -50,6 +51,7 @@ function VendorView({ v, me }: { v: VendorDetail; me: Me }) {
     <>
       <Link to="/vendors" className="text-sm font-medium text-muted-foreground hover:text-foreground">← Vendors</Link>
       <PageHeader title={v.name} subtitle={v.address ?? undefined} actions={<StatusPill status={v.status} />} />
+      <VendorStatus v={v} me={me} />
       <div className="grid gap-6 lg:grid-cols-2">
         <Panel title="Details">
           <dl className="space-y-2 text-sm">

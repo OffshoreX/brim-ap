@@ -30,6 +30,8 @@ export const CAN = {
   reconciliation: R("finance_manager", "controller_admin", "auditor"),
   runReconciliation: R("finance_manager", "controller_admin"), // POST /api/reconciliation
   vendors: R("ap_clerk", "finance_manager", "controller_admin", "auditor"),
+  createVendor: R("ap_clerk", "finance_manager", "controller_admin"), // POST /api/vendors
+  vendorDecide: R("finance_manager", "controller_admin"), // POST /api/vendors/:id/approve, /hold, /release-hold
   bankChange: R("ap_clerk", "finance_manager", "controller_admin"),
   bankVerify: R("finance_manager", "controller_admin"),
   audit: R("auditor", "controller_admin", "finance_manager"),

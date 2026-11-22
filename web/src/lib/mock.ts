@@ -297,7 +297,7 @@ export async function mockRequest(method: string, fullPath: string, body: unknow
     return { status: 200, data: rows.slice(offset, offset + limit), total: rows.length };
   }
   if (path === "/audit/verify") return { status: 200, data: { ok: true, rowCount: 120, headHash: "3212bc049a4ae965d3fb989a9c9b72cc64b0b461cb6ff6aff0d9417499d9c258" } satisfies T.AuditVerify };
-  if (path === "/users") return { status: 200, data: [ME] };
+  if (path === "/users") return { status: 200, data: { users: [{ ...ME, status: "active", managerId: null, approvalLimitCents: 0, delegateUserId: null }] satisfies T.ManagedUser[] } };
   if (path === "/admin/approval-rules") return { status: 200, data: { rules: s.rules } };
   if (seg[0] === "admin" && seg[1] === "approval-rules" && seg[2]) {
     const r = s.rules.find((x) => String(x.id) === seg[2]);

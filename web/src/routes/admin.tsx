@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAction, useApprovalRules } from "@/hooks/queries";
 import { api } from "@/lib/api";
+import { toCents } from "@/lib/format";
 import { can, ROLE_LABEL } from "@/lib/roles";
 import { pageHead } from "@/lib/seo";
 import type { ApprovalRule, Role } from "@/lib/types";
@@ -35,9 +36,6 @@ function AdminPage() {
     </>
   );
 }
-
-// "10000.50" -> 1000050. Whole cents only, as text, so no float ever reaches the server.
-const toCents = (t: string) => (/^\d{1,10}(\.\d{1,2})?$/.test(t.trim()) ? Math.round(Number(t) * 100) : null);
 
 function RuleRow({ r }: { r: ApprovalRule }) {
   const [amount, setAmount] = useState((r.over_cents / 100).toFixed(2));
