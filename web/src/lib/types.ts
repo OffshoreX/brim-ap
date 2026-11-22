@@ -119,6 +119,8 @@ export interface InvoiceDetail {
   approvalChain: ApprovalChainStep[];
   approvals: ApprovalDecision[];
   payments: InvoicePayment[];
+  // The clerk's latest exception resolution (from the audit log). Added by the server in T84; absent or null before that, and then nothing is shown.
+  resolution?: { actorName: string; at: string; action: string; note: string | null } | null;
 }
 
 // GET /api/invoices/counts. Same visibility as the list, so each count equals that status's X-Total-Count.

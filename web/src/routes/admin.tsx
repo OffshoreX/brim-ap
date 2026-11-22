@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { QueryView, Empty, Forbidden } from "@/components/States";
@@ -48,7 +48,7 @@ function RuleRow({ r }: { r: ApprovalRule }) {
       <Td className="font-semibold">{r.policy_id ?? `Rule ${r.id}`}</Td>
       <Td><Input aria-label={`Threshold for ${r.policy_id ?? r.id}`} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={cents === null} className="num h-9 w-40 text-right" /></Td>
       <Td>{r.extra_role === "cfo" ? "CFO" : ROLE_LABEL[r.extra_role as Role] ?? r.extra_role}</Td>
-      <Td>{dirty && <Button disabled={cents === null || save.isPending} onClick={() => cents !== null && save.mutateAsync(cents).then(() => toast.success("Rule saved")).catch((e: Error) => { toast.error(e.message); setAmount((r.over_cents / 100).toFixed(2)); })}>{save.isPending ? "Saving…" : "Save"}</Button>}</Td>
+      <Td>{dirty && <Button disabled={cents === null || save.isPending} onClick={() => cents !== null && save.mutateAsync(cents).then(() => notify.info("Rule saved")).catch((e: Error) => { notify.error(e.message); setAmount((r.over_cents / 100).toFixed(2)); })}>{save.isPending ? "Saving…" : "Save"}</Button>}</Td>
     </tr>
   );
 }

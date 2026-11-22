@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { ConfirmInline } from "@/components/ConfirmInline";
 import { ErrorText } from "@/components/ErrorText";
 import { Panel } from "@/components/Panel";
@@ -23,7 +23,7 @@ export function VendorStatus({ v, me }: { v: VendorDetail; me: Me }) {
   const lift = useAction(() => api.releaseVendorHold(v.id), keys);
   const run = (p: Promise<unknown>, ok: string) => {
     setError(null);
-    p.then(() => { toast.success(ok); setReason(""); }).catch((e: Error) => {
+    p.then(() => { notify.money(ok); setReason(""); }).catch((e: Error) => {
       setError(e.message);
       void qc.invalidateQueries({ queryKey: keys[0]! }); // a refusal usually means the page is out of date: show the vendor as it is now
     });

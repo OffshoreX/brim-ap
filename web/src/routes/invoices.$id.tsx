@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { AppShell } from "@/components/AppShell";
 import { Panel } from "@/components/Panel";
 import { QueryView, ErrorState, Loading } from "@/components/States";
@@ -45,7 +45,7 @@ function InvoiceView({ inv, me }: { inv: InvoiceDetail; me: Me }) {
   const trail = useInvoiceTrail(id, showTrail);
   const plog = useInvoiceProcessLog(id);
   // Failures show the server's own sentence (for example "You are not the next approver for this invoice").
-  const run = (p: Promise<unknown>, ok: string) => p.then(() => toast.success(ok)).catch((e: Error) => toast.error(e.message));
+  const run = (p: Promise<unknown>, ok: string, money = true) => p.then(() => (money ? notify.money(ok) : notify.info(ok))).catch((e: Error) => notify.error(e.message));
 
   const hasError = inv.flags.some((f) => f.severity === "error");
   const vendor = inv.vendorName ?? (inv.vendorId === null ? "Unknown vendor" : `Vendor #${inv.vendorId}`);
@@ -71,7 +71,7 @@ function InvoiceView({ inv, me }: { inv: InvoiceDetail; me: Me }) {
           <div className="flex flex-wrap items-center gap-3">
             <Money cents={inv.totalCents} currency={inv.currency} className="text-2xl font-bold md:text-3xl" />
             {can(me.role, "process") && ["received", "needs_review"].includes(inv.status) && (
-              <Button variant="outline" disabled={process.isPending} onClick={() => run(process.mutateAsync(undefined), "Processing finished")}>{process.isPending ? "Processing…" : "Run processing"}</Button>
+              <Button variant="outline" disabled={process.isPending} onClick={() => run(process.mutateAsync(undefined), "Processing finished", false)}>{process.isPending ? "Processing…" : "Run processing"}</Button>
             )}
             {can(me.role, "release") && inv.status === "scheduled" && scheduled && (
               <ConfirmInline label="Release payment" pending={release.isPending} confirmLabel="Release"
@@ -149,9 +149,16 @@ function InvoiceView({ inv, me }: { inv: InvoiceDetail; me: Me }) {
         </div>
 
         <div className="space-y-6">
-          <Panel title="Approval chain"><ApprovalStepper chain={inv.approvalChain} decisions={inv.approvals} /></Panel>
+          <Panel title="Approval chain"><ApprovalStepper chain={inv.approvalChain} decisions={inv.approvals} me={me} /></Panel>
+          {inv.resolution && (
+            <Panel title="Resolution">
+              <p className="text-sm"><span className="font-semibold">{inv.resolution.actorName}</span> <span className="text-muted-foreground">· <span className="num">{formatDateTime(inv.resolution.at)}</span></span></p>
+              <p className="mt-1 text-sm font-medium">{words(inv.resolution.action)}</p>
+              {inv.resolution.note && <p className="mt-1 text-sm text-foreground">“{inv.resolution.note}”</p>}
+            </Panel>
+          )}
           <Panel title="Payments">
-            {inv.payments.length === 0 ? <p className="text-sm text-muted-foreground">No payment has been prepared for this invoice.</p> : (
+            {inv.payments.length === 0 ? <p className="text-sm text-muted-foreground">No payment has been scheduled for this invoice.</p> : (
               <ul className="divide-y divide-border">
                 {inv.payments.map((p) => (
                   <li key={p.id} className="space-y-1 py-2.5 text-sm first:pt-0 last:pb-0">
