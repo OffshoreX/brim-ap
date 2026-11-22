@@ -176,13 +176,111 @@ export interface AgingReport {
   currency: string;
   buckets: AgingBucket[];
 }
+export const SPEND_BY = ["vendor", "department", "month"] as const;
+export type SpendBy = (typeof SPEND_BY)[number];
 export interface SpendRow {
-  vendorName: string;
+  label: string; // vendor name, department or yyyy-mm, depending on SpendBy
   amountCents: number;
+  count: number;
 }
+// total = how many groups exist (X-Total-Count), so the page can say "top 8 of 52".
 export interface SpendReport {
   currency: string;
   rows: SpendRow[];
+  total: number;
+}
+// GET /api/reports/discounts: one row per vendor with early-pay terms. Amounts are CAD cents.
+export interface DiscountRow {
+  vendor: string;
+  terms: string;
+  takenPayments: number;
+  takenCadCents: number;
+  missedPayments: number;
+  missedCadCents: number;
+}
+
+// GET /api/vendors and /api/vendors/:id. Column names are the database's (snake_case); the server never sends the full
+// account number, only bank_account_last4. Money fields do not exist on a vendor.
+export interface Vendor {
+  id: number;
+  ext_id: string;
+  name: string;
+  category: string | null;
+  default_gl_account: string | null;
+  address: string | null;
+  province_or_state: string | null;
+  country: string | null;
+  gst_hst_number: string | null;
+  qst_number: string | null;
+  payment_terms_days: number | null;
+  early_pay_discount: string | null;
+  preferred_payment_method: string | null;
+  accepts_card_payment: number;
+  bank_institution: string | null;
+  bank_transit: string | null;
+  bank_details_updated_at: string | null;
+  ap_contact_email: string | null;
+  requires_po: number;
+  status: "active" | "on_hold" | "pending_review" | string;
+  onboarded_at: string | null;
+  currency: string;
+  bank_account_last4: string;
+}
+// One row of vendor_bank_changes. status: pending (waiting for a callback), applied (verified) or rejected.
+export interface BankChange {
+  id: number;
+  changed_at: string;
+  changed_by_user_id: number | null;
+  request_channel: string | null;
+  status: "pending" | "applied" | "rejected" | string;
+  verified_by_callback: number;
+  old_account_last4: string | null;
+  new_account_last4: string | null;
+  verified_by_user_id: number | null;
+  verified_at: string | null;
+}
+export interface VendorDetail extends Vendor {
+  bankChanges: BankChange[];
+}
+
+// GET /api/reconciliation?category=&limit=&offset= -> { summary, total, rows }. One row per payment or per bank/card line.
+export const RECON_CATEGORIES = ["matched", "payment_unmatched", "payment_ambiguous", "amount_diff", "duplicate", "bank_no_payment", "card_no_payment"] as const;
+export type ReconCategory = (typeof RECON_CATEGORIES)[number];
+export interface ReconRow {
+  category: ReconCategory;
+  paymentId: number | null;
+  invoiceNumber: string | null;
+  vendor: string | null;
+  method: string | null;
+  paymentCents: number | null;
+  lineSource: "bank" | "card" | null;
+  lineId: string | null;
+  lineText: string | null;
+  lineDate: string | null;
+  lineCents: number | null;
+  diffCents: number | null;
+  note: string;
+}
+export interface Reconciliation {
+  summary: Record<ReconCategory, number>;
+  total: number; // rows matching the category filter
+  rows: ReconRow[];
+}
+// POST /api/reconciliation: saves the result; changed = payments whose reconciliation status changed.
+export interface ReconciliationRun {
+  changed: number;
+  summary: Record<ReconCategory, number>;
+}
+
+// GET /api/audit rows are the same shape as TrailEntry. GET /api/audit/verify returns one of these two.
+export type AuditVerify = { ok: true; rowCount: number; headHash: string } | { ok: false; rowCount: number; brokenAtId: number; reason: string };
+
+// GET /api/admin/approval-rules -> { rules }. Only over_cents can be changed (PUT). Thresholds compare to the invoice's CAD total.
+export interface ApprovalRule {
+  id: number;
+  policy_id: string | null;
+  over_cents: number;
+  extra_role: string; // finance_manager, controller_admin or cfo (cfo is not a login role)
 }
 
 // ---------- 1b. Approvals, exceptions, payments, upload (verified by calling each endpoint as each role) ----------
@@ -337,68 +435,6 @@ export interface UploadFileResult {
   error: string | null;
 }
 
-// ---------- 2. Not yet checked against the server (owned by the tickets for those pages) ----------
-
-export interface Reconciliation {
-  periodLabel: string;
-  matchedCount: number;
-  unmatchedCount: number;
-  matchedCents: number;
-  unmatchedCents: number;
-  currency: string;
-  lastRunAt: string | null;
-}
-
-export interface DiscountRow {
-  invoiceNumber: string;
-  vendorName: string;
-  discountCents: number;
-  deadline: string;
-  captured: boolean;
-}
-export interface DiscountReport {
-  currency: string;
-  rows: DiscountRow[];
-}
-
-export interface Vendor {
-  id: string;
-  name: string;
-  email: string | null;
-  paymentMethod: "eft" | "cheque";
-  bankLast4: string | null;
-  status: "active" | "on_hold";
-  pendingBankChange: boolean;
-}
-
-export interface BankChangeRequest {
-  id: string;
-  requestedBy: string;
-  requestedAt: string;
-  newBankLast4: string;
-  status: "pending_verification" | "verified" | "rejected";
-}
-
-export interface VendorDetail extends Vendor {
-  address: string | null;
-  bankChange: BankChangeRequest | null;
-}
-
-export interface AuditEntry {
-  id: string;
-  at: string;
-  actorName: string;
-  action: string;
-  entity: string;
-  hash: string;
-}
-
-export interface AuditVerify {
-  ok: boolean;
-  checked: number;
-  message: string;
-}
-
 export interface AppUser {
   id: string;
   name: string;
@@ -406,12 +442,3 @@ export interface AppUser {
   role: Role;
 }
 
-export interface ApprovalRule {
-  id: string;
-  name: string;
-  minCents: number;
-  maxCents: number | null;
-  currency: string;
-  approverRole: Role;
-  steps: number;
-}

@@ -175,33 +175,44 @@ export const api = {
   // No method sent: the server picks the vendor's preferred one (the same one readyToPay shows as suggestedMethod).
   preparePayment: (invoiceId: number) => post<T.PrepareResult>("/payments/prepare", { invoiceId }, true),
 
-  reconciliation: () => get<T.Reconciliation>("/reconciliation"),
-  runReconciliation: () => post<T.Reconciliation>("/reconciliation"),
+  // GET /api/reconciliation: { summary, total, rows }, 25 rows a page. category filters rows (not the summary).
+  reconciliation: (p: { category?: string | undefined; limit: number; offset: number }) =>
+    get<T.Reconciliation>(`/reconciliation${qs(p)}`),
+  // POST /api/reconciliation: finance manager and controller only. Saves the match result on each payment.
+  runReconciliation: () => post<T.ReconciliationRun>("/reconciliation"),
   // GET /api/reports/aging -> [{ bucket: "0-30", invoices, totalCadCents }] (open invoices past due; CAD only).
   aging: async (): Promise<T.AgingReport> => {
     const rows = await get<{ bucket: string; invoices: number; totalCadCents: number }[]>("/reports/aging");
     return { currency: "CAD", buckets: rows.map((r) => ({ label: `${r.bucket} days past due`, amountCents: r.totalCadCents, count: r.invoices })) };
   },
-  // GET /api/reports/spend?limit= -> [{ key: <vendor name>, invoices, totalCadCents }], biggest first.
-  spend: async (limit = 8): Promise<T.SpendReport> => {
-    const rows = await get<{ key: string; invoices: number; totalCadCents: number }[]>(`/reports/spend${qs({ limit })}`);
-    return { currency: "CAD", rows: rows.map((r) => ({ vendorName: r.key, amountCents: r.totalCadCents })) };
+  // GET /api/reports/spend?by=&limit= -> [{ key, invoices, totalCadCents }], biggest first; X-Total-Count = number of groups.
+  spend: async (by: T.SpendBy, limit = 8): Promise<T.SpendReport> => {
+    const page = await list<{ key: string; invoices: number; totalCadCents: number }>(`/reports/spend${qs({ by, limit })}`);
+    return { currency: "CAD", total: page.total, rows: page.items.map((r) => ({ label: r.key, amountCents: r.totalCadCents, count: r.invoices })) };
   },
-  discounts: () => get<T.DiscountReport>("/reports/discounts"),
+  // GET /api/reports/discounts -> one row per vendor with early-pay terms (already the shape the page uses).
+  discounts: () => get<T.DiscountRow[]>("/reports/discounts"),
 
+  // GET /api/vendors -> every vendor (56 in the dataset, no paging, no X-Total-Count). Closed to employees and approvers.
   vendors: () => get<T.Vendor[]>("/vendors"),
-  vendor: (id: string) => get<T.VendorDetail>(`/vendors/${id}`),
-  updateVendor: (id: string, body: Partial<T.Vendor>) => raw(`/vendors/${id}`, { method: "PATCH", body }),
-  requestBankChange: (id: string, body: { institution: string; transit: string; account: string }) =>
+  // GET /api/vendors/:id -> the vendor row plus its bankChanges history (oldest first).
+  vendor: (id: string | number) => get<T.VendorDetail>(`/vendors/${id}`),
+  // POST /api/vendors/:id/bank-change: only creates a pending request; the vendor's account does not change yet.
+  requestBankChange: (id: number, body: { institution: string; transit: string; account: string; channel: string }) =>
     post(`/vendors/${id}/bank-change`, body, true),
-  verifyBankChange: (id: string, body: { calledNumber: string; note: string }) =>
-    post(`/vendors/${id}/bank-change/verify`, body, true),
+  // POST /api/vendors/:id/bank-change/verify: verified=true applies the new account, false rejects the request.
+  // The server refuses when the verifier is the person who asked ("You cannot verify your own bank-change request").
+  verifyBankChange: (id: number, verified: boolean) => post(`/vendors/${id}/bank-change/verify`, { verified }, true),
 
-  audit: () => get<T.AuditEntry[]>("/audit"),
+  // GET /api/audit?limit=&offset= -> newest first, 50 a page, X-Total-Count = all rows (finance manager, auditor, controller).
+  audit: (p: { limit: number; offset: number }) => list<T.TrailEntry>(`/audit${qs(p)}`),
+  // GET /api/audit/verify (auditor and controller only) -> the chain walk: ok + rowCount + headHash, or where it broke and why.
   auditVerify: () => get<T.AuditVerify>("/audit/verify"),
   processLog: (limit: number) => get<T.ProcessStep[]>(`/process-log${qs({ limit })}`),
   users: () => get<T.AppUser[]>("/users"),
-  approvalRules: () => get<T.ApprovalRule[]>("/admin/approval-rules"),
-  updateApprovalRule: (id: string, body: Partial<T.ApprovalRule>) =>
-    raw(`/admin/approval-rules/${id}`, { method: "PUT", body }),
+  // GET /api/admin/approval-rules -> { rules: [{ id, policy_id, over_cents, extra_role }] } (controller only).
+  approvalRules: async () => (await get<{ rules: T.ApprovalRule[] }>("/admin/approval-rules")).rules,
+  // PUT /api/admin/approval-rules/:id with { over_cents } -> { rule }. Only the amount is editable; the server checks the levels still rise.
+  updateApprovalRule: async (id: number, overCents: number) =>
+    (await raw(`/admin/approval-rules/${id}`, { method: "PUT", body: { over_cents: overCents } })).data as { rule: T.ApprovalRule },
 };

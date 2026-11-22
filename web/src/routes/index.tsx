@@ -36,7 +36,7 @@ function Dashboard({ me }: { me: Me }) {
   const dash = useDashboard();
   const showReports = can(me.role, "reports");
   const aging = useAging(showReports);
-  const spend = useSpend(showReports);
+  const spend = useSpend("vendor", showReports);
   const showActivity = can(me.role, "activity");
   const activity = useProcessLog(8, showActivity);
 
@@ -83,7 +83,7 @@ function Dashboard({ me }: { me: Me }) {
           </Panel>
           <Panel title="Spend by vendor">
             <QueryView q={spend}>
-              {(s) => s.rows.length ? <BarChart currency={s.currency} rows={s.rows.map((r) => ({ label: r.vendorName, cents: r.amountCents }))} /> : <Empty title="No spend yet" />}
+              {(s) => s.rows.length ? <BarChart currency={s.currency} rows={s.rows.map((r) => ({ label: r.label, cents: r.amountCents }))} /> : <Empty title="No spend yet" />}
             </QueryView>
           </Panel>
         </div>

@@ -1,15 +1,21 @@
 // Sample data. Loaded ONLY when VITE_USE_MOCKS === "true" (see api.ts). Never mixed with real responses.
-import { INVOICE_STATUSES } from "./types";
+import { INVOICE_STATUSES, RECON_CATEGORIES } from "./types";
 import type * as T from "./types";
 
 type Res = { status: number; data?: unknown; total?: number; error?: string };
 
+// Real vendor rows (snake_case, last4 only). The first one has a pending bank change asked for by the clerk (user 4).
+const mkVendor = (id: number, name: string, email: string, method: string, last4: string, status: string, category: string): T.Vendor => ({
+  id, ext_id: `V${String(id).padStart(3, "0")}`, name, category, default_gl_account: "5100", address: `${id * 11} Dock Rd, Vancouver BC`, province_or_state: "BC", country: "CA",
+  gst_hst_number: `${100000000 + id}RT0001`, qst_number: null, payment_terms_days: 30, early_pay_discount: id === 4 ? "2/10 net 30" : null, preferred_payment_method: method, accepts_card_payment: 0,
+  bank_institution: "004", bank_transit: "95688", bank_details_updated_at: null, ap_contact_email: email, requires_po: 0, status, onboarded_at: "2022-11-08", currency: "CAD", bank_account_last4: last4,
+});
 const VENDORS: T.VendorDetail[] = [
-  { id: "1", name: "Pacific Fuel Supply Ltd.", email: "ar@pacificfuel.ca", paymentMethod: "eft", bankLast4: "4421", status: "active", pendingBankChange: true, address: "88 Dock Rd, Vancouver BC", bankChange: { id: "bc1", requestedBy: "Priya Shah", requestedAt: "2026-11-18T15:10:00Z", newBankLast4: "9032", status: "pending_verification" } },
-  { id: "2", name: "Northshore Tire & Fleet Service", email: "billing@northshoretire.com", paymentMethod: "eft", bankLast4: "1180", status: "active", pendingBankChange: false, address: "12 Esplanade, North Vancouver BC", bankChange: null },
-  { id: "3", name: "Harbour Crane Rentals", email: "accounts@harbourcrane.ca", paymentMethod: "cheque", bankLast4: null, status: "active", pendingBankChange: false, address: "400 Port Way, Delta BC", bankChange: null },
-  { id: "4", name: "Coastal Pallet Co.", email: "ap@coastalpallet.ca", paymentMethod: "eft", bankLast4: "7765", status: "on_hold", pendingBankChange: false, address: "9 Mill St, Richmond BC", bankChange: null },
-  { id: "5", name: "Strait Telecom", email: "invoices@straittel.ca", paymentMethod: "eft", bankLast4: "2290", status: "active", pendingBankChange: false, address: "1 Signal Hill, Surrey BC", bankChange: null },
+  { ...mkVendor(1, "Pacific Fuel Supply Ltd.", "ar@pacificfuel.ca", "EFT", "4421", "active", "Fuel & Freight"), bankChanges: [{ id: 1, changed_at: "2026-11-18T15:10:00.000Z", changed_by_user_id: 4, request_channel: "email", status: "pending", verified_by_callback: 0, old_account_last4: "4421", new_account_last4: "9032", verified_by_user_id: null, verified_at: null }] },
+  { ...mkVendor(2, "Northshore Tire & Fleet Service", "billing@northshoretire.com", "EFT", "1180", "active", "Fleet"), bankChanges: [] },
+  { ...mkVendor(3, "Harbour Crane Rentals", "accounts@harbourcrane.ca", "CHEQUE", "", "active", "Equipment"), bankChanges: [] },
+  { ...mkVendor(4, "Coastal Pallet Co.", "ap@coastalpallet.ca", "EFT", "7765", "on_hold", "Packaging"), bankChanges: [{ id: 2, changed_at: "2026-09-02T10:00:00.000Z", changed_by_user_id: 4, request_channel: "phone", status: "applied", verified_by_callback: 1, old_account_last4: "1234", new_account_last4: "7765", verified_by_user_id: 3, verified_at: "2026-09-02T11:00:00.000Z" }] },
+  { ...mkVendor(5, "Strait Telecom", "invoices@straittel.ca", "EFT", "2290", "pending_review", "Telecom"), bankChanges: [] },
 ];
 
 // Real shapes: ids are numbers, statuses are the server's seven, flags are {code, message, severity}.
@@ -46,7 +52,7 @@ function buildInvoices(): T.InvoiceDetail[] {
       totalCadCents: total,
       requesterId: 13,
       sourceFile: null,
-      sourceEmail: i % 3 === 0 ? { emailId: `E${i}`, from: v.email ?? "ap@vendor.example", subject: `Invoice INV-${2400 + i}`, receivedAt: `2026-10-${String(day).padStart(2, "0")}T09:00:00` } : null,
+      sourceEmail: i % 3 === 0 ? { emailId: `E${i}`, from: v.ap_contact_email ?? "ap@vendor.example", subject: `Invoice INV-${2400 + i}`, receivedAt: `2026-10-${String(day).padStart(2, "0")}T09:00:00` } : null,
       extraction: null,
       flags,
       vendor: { id: vi + 1, name: v.name, category: "Fuel & Freight", status: "active", paymentTermsDays: 30, province: "BC", currency: "CAD" },
@@ -74,9 +80,9 @@ function db(): Store {
     store = {
       invoices,
       rules: [
-        { id: "r1", name: "Small invoices", minCents: 0, maxCents: 500_000, currency: "CAD", approverRole: "approver", steps: 1 },
-        { id: "r2", name: "Mid-size", minCents: 500_000, maxCents: 2_500_000, currency: "CAD", approverRole: "finance_manager", steps: 2 },
-        { id: "r3", name: "Large", minCents: 2_500_000, maxCents: null, currency: "CAD", approverRole: "controller_admin", steps: 3 },
+        { id: 1, policy_id: "P02", over_cents: 1_000_000, extra_role: "finance_manager" },
+        { id: 2, policy_id: "P03", over_cents: 5_000_000, extra_role: "controller_admin" },
+        { id: 3, policy_id: "P04", over_cents: 25_000_000, extra_role: "cfo" },
       ],
       uploads: {},
     };
@@ -182,7 +188,17 @@ export async function mockRequest(method: string, fullPath: string, body: unknow
     return { status: 200, data: { paymentId: paid.id, invoiceId: i.id, status: "paid", method: paid.method, reference: paid.reference ?? "", discountCents: 0 } satisfies T.ReleaseResult };
   }
   if (path === "/reports/aging") return { status: 200, data: [{ bucket: "0-30", invoices: 5, totalCadCents: 1_574_195 }, { bucket: "31-60", invoices: 2, totalCadCents: 310_000 }, { bucket: "61-90", invoices: 0, totalCadCents: 0 }, { bucket: "90+", invoices: 0, totalCadCents: 0 }] };
-  if (path === "/reports/spend") return { status: 200, data: VENDORS.map((v, k) => ({ key: v.name, invoices: 10 - k, totalCadCents: [12_400_000, 6_210_000, 4_800_500, 2_150_000, 990_000][k]! })).slice(0, Number(q.get("limit") ?? 50)) };
+  if (path === "/reports/spend") {
+    const by = q.get("by") ?? "vendor";
+    const groups: Record<string, [string, number, number][]> = {
+      vendor: VENDORS.map((v, k) => [v.name, 10 - k, [12_400_000, 6_210_000, 4_800_500, 2_150_000, 990_000][k]!]),
+      department: [["Operations", 143, 67_933_378], ["Facilities", 99, 64_380_270], ["IT", 53, 15_260_580]],
+      month: [["2026-03", 51, 23_899_346], ["2026-09", 42, 23_005_115], ["2026-07", 43, 22_610_891]],
+    };
+    const g = groups[by];
+    if (!g) return { status: 400, error: "by must be vendor, department or month" };
+    return { status: 200, data: g.slice(0, Number(q.get("limit") ?? 50)).map(([key, invoices, totalCadCents]) => ({ key, invoices, totalCadCents })), total: g.length };
+  }
   if (path === "/process-log") return { status: 200, data: s.invoices.slice(0, Number(q.get("limit") ?? 20)).map((i, k) => ({ ...stepsFor(i, 5)[k % 5]!, id: k + 1, invoiceId: i.id, invoiceNumber: i.invoiceNumber, createdAt: `2026-11-21T${String(16 - (k % 10)).padStart(2, "0")}:0${k % 6}:00` })) };
   // Lists below are paged like the server: ?limit=&offset= and the total in X-Total-Count.
   const slice = (rows: unknown[]): Res => {
@@ -237,26 +253,75 @@ export async function mockRequest(method: string, fullPath: string, body: unknow
     i.status = "scheduled";
     return { status: 200, data: { paymentId: id, invoiceId: i.id, status: "scheduled", method: "EFT", scheduledDate, earlyPay: false, notes: [] } satisfies T.PrepareResult };
   }
-  if (path === "/reconciliation") return { status: 200, data: recon() };
-  if (path === "/reports/discounts") return { status: 200, data: { currency: "CAD", rows: [{ invoiceNumber: "INV-2402", vendorName: "Northshore Tire & Fleet Service", discountCents: 24_000, deadline: "2026-11-25", captured: false }, { invoiceNumber: "INV-2390", vendorName: "Coastal Pallet Co.", discountCents: 9_500, deadline: "2026-11-12", captured: true }] } };
-  if (path === "/vendors") return { status: 200, data: VENDORS };
+  if (path === "/reconciliation" && method === "POST") return { status: 200, data: { changed: 2, summary: reconSummary() } satisfies T.ReconciliationRun };
+  if (path === "/reconciliation") {
+    const cat = q.get("category");
+    if (cat && !(T_CATS as readonly string[]).includes(cat)) return { status: 400, error: "unknown category" };
+    const rows = RECON.filter((r) => !cat || r.category === cat);
+    const limit = Math.min(Number(q.get("limit") ?? 50), 200);
+    const offset = Number(q.get("offset") ?? 0);
+    return { status: 200, data: { summary: reconSummary(), total: rows.length, rows: rows.slice(offset, offset + limit) } satisfies T.Reconciliation, total: rows.length };
+  }
+  if (path === "/reports/discounts") return { status: 200, data: [
+    { vendor: "Coastal Pallet Co.", terms: "2/10 net 30", takenPayments: 1, takenCadCents: 7_077, missedPayments: 4, missedCadCents: 54_208 },
+    { vendor: "Northshore Tire & Fleet Service", terms: "2/10 net 30", takenPayments: 7, takenCadCents: 12_710, missedPayments: 3, missedCadCents: 5_902 },
+  ] satisfies T.DiscountRow[] };
+  if (path === "/vendors") return { status: 200, data: VENDORS.map(({ bankChanges: _b, ...v }) => v) };
   if (seg[0] === "vendors" && seg[1]) {
-    const v = VENDORS.find((x) => x.id === seg[1]);
-    if (!v) return { status: 404, error: "Vendor not found." };
-    if (seg[2] === "bank-change" && seg[3] === "verify") { if (v.bankChange) v.bankChange.status = "verified"; v.pendingBankChange = false; return { status: 200, data: v }; }
-    if (seg[2] === "bank-change") { const a = String((body as { account?: string }).account ?? "0000"); v.bankChange = { id: `bc${Date.now()}`, requestedBy: ME.name, requestedAt: new Date().toISOString(), newBankLast4: a.slice(-4), status: "pending_verification" }; v.pendingBankChange = true; return { status: 200, data: v }; }
-    if (method === "PATCH") Object.assign(v, body);
+    const v = VENDORS.find((x) => String(x.id) === seg[1]);
+    if (!v) return { status: 404, error: "Vendor not found" };
+    const pending = v.bankChanges.find((c) => c.status === "pending");
+    if (seg[2] === "bank-change" && seg[3] === "verify") {
+      if (typeof (body as { verified?: unknown })?.verified !== "boolean") return { status: 400, error: "verified must be true or false" };
+      if (!pending) return { status: 409, error: "No pending bank change for this vendor (already verified or rejected)" };
+      if (pending.changed_by_user_id === ME.id) return { status: 403, error: "You cannot verify your own bank-change request" };
+      const ok = (body as { verified: boolean }).verified;
+      Object.assign(pending, { status: ok ? "applied" : "rejected", verified_by_callback: ok ? 1 : 0, verified_by_user_id: ME.id, verified_at: new Date().toISOString() });
+      if (ok) v.bank_account_last4 = pending.new_account_last4 ?? v.bank_account_last4;
+      return { status: 200, data: { id: pending.id, vendorId: v.id, status: pending.status } };
+    }
+    if (seg[2] === "bank-change") {
+      const b = (body ?? {}) as Record<string, unknown>;
+      if (!["institution", "transit", "account", "channel"].every((k) => typeof b[k] === "string" && String(b[k]).trim() !== "")) return { status: 400, error: "institution, transit, account and channel are required strings" };
+      if (pending) return { status: 409, error: "A bank change is already pending for this vendor" };
+      const id = v.bankChanges.length + 10;
+      v.bankChanges.push({ id, changed_at: new Date().toISOString(), changed_by_user_id: ME.id, request_channel: String(b["channel"]), status: "pending", verified_by_callback: 0, old_account_last4: v.bank_account_last4, new_account_last4: String(b["account"]).slice(-4), verified_by_user_id: null, verified_at: null });
+      return { status: 201, data: { id, vendorId: v.id, status: "pending", oldLast4: v.bank_account_last4, newLast4: String(b["account"]).slice(-4) } };
+    }
     return { status: 200, data: v };
   }
-  if (path === "/audit") return { status: 200, data: Array.from({ length: 15 }, (_, k) => ({ id: `au${k}`, at: `2026-11-${String(20 - k).padStart(2, "0")}T1${k % 10}:00:00Z`, actorName: ["Dana Okafor", "Priya Shah", "Marcus Lee", "System"][k % 4]!, action: ["approve", "upload", "code_line", "prepare_payment"][k % 4]!, entity: `INV-${2400 + k}`, hash: `9f${(k * 2654435761 >>> 0).toString(16).padStart(8, "0")}` })) };
-  if (path === "/audit/verify") return { status: 200, data: { ok: true, checked: 1284, message: "All 1,284 entries link correctly." } };
+  if (path === "/audit") {
+    const limit = Math.min(Number(q.get("limit") ?? 50), 200);
+    const offset = Number(q.get("offset") ?? 0);
+    const rows: T.TrailEntry[] = Array.from({ length: 120 }, (_, k) => ({ id: 120 - k, at: `2026-11-${String(21 - (k % 20)).padStart(2, "0")}T1${k % 10}:00:00.000Z`, actorId: k % 4 + 1, actorName: ["Priya Raman", "Elise Tremblay", "Jordan Okafor", "Dev Malhotra"][k % 4]!, action: ["invoice.decision", "invoice.upload", "vendor.bank_change_requested", "payment.release"][k % 4]!, entity: ["invoice", "invoice", "vendor_bank_change", "payment"][k % 4]!, entityId: String(400 - k), before: k % 2 ? { status: "pending_approval" } : null, after: { status: "approved" } }));
+    return { status: 200, data: rows.slice(offset, offset + limit), total: rows.length };
+  }
+  if (path === "/audit/verify") return { status: 200, data: { ok: true, rowCount: 120, headHash: "3212bc049a4ae965d3fb989a9c9b72cc64b0b461cb6ff6aff0d9417499d9c258" } satisfies T.AuditVerify };
   if (path === "/users") return { status: 200, data: [ME] };
-  if (path === "/admin/approval-rules") return { status: 200, data: s.rules };
-  if (seg[0] === "admin" && seg[2]) { const r = s.rules.find((x) => x.id === seg[2]); if (r) Object.assign(r, body); return { status: 200, data: r }; }
+  if (path === "/admin/approval-rules") return { status: 200, data: { rules: s.rules } };
+  if (seg[0] === "admin" && seg[1] === "approval-rules" && seg[2]) {
+    const r = s.rules.find((x) => String(x.id) === seg[2]);
+    if (!r) return { status: 404, error: "Rule not found" };
+    const over = (body as { over_cents?: unknown } | null)?.over_cents;
+    if (!Number.isSafeInteger(over) || (over as number) < 0) return { status: 400, error: "over_cents must be an integer number of cents, >= 0" };
+    const next = s.rules.map((x) => (x.id === r.id ? { ...x, over_cents: over as number } : x));
+    if (!(next[0]!.over_cents <= next[1]!.over_cents && next[1]!.over_cents <= next[2]!.over_cents)) return { status: 400, error: "thresholds must rise: finance_manager <= controller_admin <= cfo" };
+    r.over_cents = over as number;
+    return { status: 200, data: { rule: r } };
+  }
   if (path.endsWith("eft-file") || path.endsWith("cheques")) return { status: 200, data: "" };
   return { status: 404, error: `No sample data for ${path}.` };
 }
 
-function recon(): T.Reconciliation {
-  return { periodLabel: "November 2026", matchedCount: 212, unmatchedCount: 4, matchedCents: 31_204_550, unmatchedCents: 412_300, currency: "CAD", lastRunAt: "2026-11-21T06:00:00Z" };
-}
+const T_CATS = RECON_CATEGORIES;
+const bank = (category: T.ReconCategory, k: number, over: Partial<T.ReconRow> = {}): T.ReconRow => ({
+  category, paymentId: 100 + k, invoiceNumber: `INV-${2400 + k}`, vendor: VENDORS[k % VENDORS.length]!.name, method: "EFT", paymentCents: 187_580 + k * 1000, lineSource: "bank", lineId: `BK-${String(k).padStart(5, "0")}`,
+  lineText: "EFT PMT SAMPLE VENDOR", lineDate: `2026-01-${String(1 + (k % 28)).padStart(2, "0")}`, lineCents: 187_580 + k * 1000, diffCents: 0, note: "", ...over,
+});
+const RECON: T.ReconRow[] = [
+  ...Array.from({ length: 60 }, (_, k) => bank("matched", k)),
+  bank("amount_diff", 61, { lineCents: 462_007, paymentCents: 462_006, diffCents: 1, note: "line BK-00061 for the same payee differs by 1 cents" }),
+  { ...bank("payment_unmatched", 62), lineSource: null, lineId: null, lineText: null, lineDate: null, lineCents: null, diffCents: null, method: "CHEQUE", note: "no cheque line for this amount within 30 days (may still be outstanding)" },
+  { category: "card_no_payment", paymentId: null, invoiceNumber: null, vendor: null, method: null, paymentCents: null, lineSource: "card", lineId: "CT-00017", lineText: "PAPER TRAIL OFFICE SUP", lineDate: "2026-01-12", lineCents: 207_945, diffCents: null, note: "card charge to a known vendor with no payment on file" },
+];
+const reconSummary = () => Object.fromEntries(T_CATS.map((c) => [c, RECON.filter((r) => r.category === c).length])) as T.Reconciliation["summary"];

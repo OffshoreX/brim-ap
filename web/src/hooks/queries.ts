@@ -2,6 +2,7 @@
 import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type { SpendBy } from "@/lib/types";
 
 // GET /api/me
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: api.me, retry: false, staleTime: 60_000 });
@@ -36,20 +37,23 @@ export const useOtherInbox = (p: Page, enabled = true) => useQuery({ queryKey: [
 export const usePayments = (p: Page) => useQuery({ queryKey: ["payments", "all", p], queryFn: () => api.payments(p), placeholderData: (prev) => prev });
 // GET /api/payments/ready
 export const useReadyToPay = (p: Page, enabled = true) => useQuery({ queryKey: ["payments", "ready", p], queryFn: () => api.readyToPay(p), enabled, placeholderData: (prev) => prev });
-// GET /api/reconciliation
-export const useReconciliation = () => useQuery({ queryKey: ["reconciliation"], queryFn: api.reconciliation });
+// GET /api/reconciliation?category=&limit=&offset=
+export const useReconciliation = (p: { category?: string | undefined; limit: number; offset: number }) =>
+  useQuery({ queryKey: ["reconciliation", p], queryFn: () => api.reconciliation(p), placeholderData: (prev) => prev });
 // GET /api/reports/aging
 export const useAging = (enabled = true) => useQuery({ queryKey: ["reports", "aging"], queryFn: api.aging, enabled });
-// GET /api/reports/spend?limit=
-export const useSpend = (enabled = true) => useQuery({ queryKey: ["reports", "spend"], queryFn: () => api.spend(), enabled });
+// GET /api/reports/spend?by=&limit=
+export const useSpend = (by: SpendBy = "vendor", enabled = true) =>
+  useQuery({ queryKey: ["reports", "spend", by], queryFn: () => api.spend(by), placeholderData: (prev) => prev, enabled });
 // GET /api/reports/discounts
 export const useDiscounts = () => useQuery({ queryKey: ["reports", "discounts"], queryFn: api.discounts });
 // GET /api/vendors
 export const useVendors = () => useQuery({ queryKey: ["vendors"], queryFn: api.vendors });
 // GET /api/vendors/:id
 export const useVendor = (id: string) => useQuery({ queryKey: ["vendor", id], queryFn: () => api.vendor(id) });
-// GET /api/audit
-export const useAudit = () => useQuery({ queryKey: ["audit"], queryFn: api.audit });
+// GET /api/audit?limit=&offset=
+export const useAudit = (p: { limit: number; offset: number }) =>
+  useQuery({ queryKey: ["audit", p], queryFn: () => api.audit(p), placeholderData: (prev) => prev });
 // GET /api/process-log?limit=
 export const useProcessLog = (limit: number, enabled = true) =>
   useQuery({ queryKey: ["process-log", limit], queryFn: () => api.processLog(limit), enabled });
