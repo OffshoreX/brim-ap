@@ -8,3 +8,8 @@ data/raw
 # local run output and design-tool working files
 data/
 .impeccable/
+
+web/node_modules
+web/dist
+web/.tanstack
+web/.output
