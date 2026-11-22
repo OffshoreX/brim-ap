@@ -1,11 +1,12 @@
 import { handle, requireRole } from "@/server/authz";
+import { readJson } from "@/server/body";
 import { IdempotencyError } from "@/server/idempotency";
 import { METHODS, PaymentError, preparePayment, type Method } from "@/server/payments";
 
 export const POST = (request: Request) =>
   handle(async () => {
     const user = requireRole(request, ["ap_clerk", "finance_manager", "controller_admin"]);
-    const body = await request.json().catch(() => null);
+    const body = await readJson(request);
     const { invoiceId, method, scheduledDate } = body ?? {};
     if (!Number.isInteger(invoiceId)) return Response.json({ error: "invoiceId must be an integer" }, { status: 400 });
     if (method !== undefined && !METHODS.includes(method)) return Response.json({ error: "method must be EFT, CHEQUE or CARD" }, { status: 400 });

@@ -23,7 +23,8 @@ import { checkTaxAtSupply, resolveSupply, SUPPLY_LABEL, type Resolved } from "./
 import { requiredTaxCodes, type TaxCodeRate, type TaxLine } from "./rules/tax";
 import { checkVendorStatus } from "./rules/vendorStatus";
 import type { Finding } from "./rules/types";
-import { matchVendor } from "./rules/vendorMatch";
+import { exactKey, matchVendor } from "./rules/vendorMatch";
+import { cleanDeep, hasMixedScripts, lookalikes } from "./rules/unicode";
 
 // Response types live here, not in contracts.ts (lead-owned).
 export type ProcessResult = {
@@ -73,7 +74,7 @@ export const rateFor = (db: Db): RateFor => (from, to, date) => {
 
 // The extractor gives a tax label and a code ("HST 13%", "HST"); tax_codes has "HST13". Match on letters and digits only.
 function resolveTaxCode(t: { code: string; label: string }, codes: TaxCodeRate[]): string | null {
-  const pct = (/(\d+(?:\.\d+)?)\s*%/.exec(t.label)?.[1] ?? "").replace(".", "");
+  const pct = (/(\d+(?:\.\d+)?)\s*%/.exec(t.label.slice(0, 100))?.[1] ?? "").replace(".", "");
   for (const text of [t.code, t.label]) {
     const n = alnum(text);
     if (!n) continue;
@@ -157,7 +158,7 @@ function poFindings(db: Db, po: { id: number; vendor_id: number; total_cents: nu
 // that invoice in its text. The longest invoice number of this vendor found there is the original.
 // No original found: a warning only, there is nothing to check the amount against.
 function creditFindings(db: Db, x: ExtractedInvoice, vendorId: number, invoiceId: number): { findings: Finding[]; originalId: number | null } {
-  const text = x.lines.map((l) => l.description).join(" ").toLowerCase();
+  const text = x.lines.map((l) => l.description).join(" ").slice(0, 20_000).toLowerCase(); // capped: it is matched against every invoice number
   const suffix = /^CN-(.+)$/i.exec(x.invoiceNumber.trim())?.[1].trim().toLowerCase();
   const all = db.prepare("SELECT id, invoice_number, total_cents FROM invoices WHERE vendor_id = ? AND total_cents > 0 AND invoice_number != ''").all(vendorId) as { id: number; invoice_number: string; total_cents: number }[];
   const orig =
@@ -267,7 +268,7 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
       writeAudit({ actorId, action: "invoice.extraction_failed", entity: "invoice", entityId: invoiceId, after: { reason: extracted.reason } });
       return finish([error("extraction_failed", extracted.reason)], null);
     }
-    const x: ExtractedInvoice = extracted.invoice;
+    const x: ExtractedInvoice = cleanDeep(extracted.invoice); // bidi controls removed from everything the UI will show
     step(
       "extract", x.notes ? "flagged" : "ok",
       `${extracted.cached ? "Read the saved answer for this file (no model call)" : "Called the model"}; schema validation passed${x.notes ? "; the document contained instructions, which were ignored" : ""}`,
@@ -292,6 +293,10 @@ export async function processInvoice(invoiceId: number, actorId: number | null =
     // Text inside the document is data. It is shown to the clerk and nothing in it is acted on.
     if (x.notes) flags.push(warning("document_contains_instructions", `The document contains an instruction, ignored: "${x.notes.slice(0, 300)}"`));
     const vendorFlagsFrom = flags.length;
+    // A vendor name that mixes alphabets, or reads like a vendor on file without being spelled like it, is how a fake sender is dressed up.
+    if (hasMixedScripts(x.vendorName)) flags.push(warning("vendor_name_mixed_scripts", `The vendor name "${x.vendorName}" mixes alphabets (for example Latin and Cyrillic letters)`));
+    for (const twin of lookalikes(x.vendorName, vendors, exactKey).slice(0, 3))
+      flags.push(warning("vendor_lookalike", `The vendor name "${x.vendorName}" looks like "${twin.name}" but is spelled differently`));
     if (vendor && match.status === "matched" && match.by === "tax_number")
       flags.push(warning("vendor_matched_by_tax_id", `No vendor is named "${x.vendorName}"; matched to "${vendor.name}" by tax id ${x.vendorTaxId}`));
     const vendorTax = digitsOf(vendor?.taxNumber);

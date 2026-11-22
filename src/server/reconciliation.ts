@@ -1,3 +1,4 @@
+import { csvCell } from "./csv";
 import type { User } from "@/contracts";
 import { writeAudit } from "./audit";
 import { getDb } from "./db";
@@ -100,7 +101,7 @@ export function reconciliationReport(f: ReportFilter, page: { limit: number; off
 }
 
 const HEAD: (keyof ReportRow)[] = ["category", "paymentId", "invoiceNumber", "vendor", "method", "paymentCents", "lineSource", "lineId", "lineText", "lineDate", "lineCents", "diffCents", "note"];
-const cell = (v: string | number | null) => (v === null ? "" : /[",\n\r]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+const cell = (v: string | number | null) => csvCell(v); // shared formula-injection guard
 // Money columns go out as decimals, the same way the EFT file does, so a spreadsheet reads them as money.
 const MONEY = new Set<keyof ReportRow>(["paymentCents", "lineCents", "diffCents"]);
 

@@ -137,7 +137,7 @@ test("(b) the invoice from V004 with an unverified email bank change is held in 
   expect(status(id)).toBe("needs_review");
   // Held means held: no approval chain exists and a decision is refused.
   expect(steps(id)).toEqual([]);
-  expect((await decide(post("http://x", 7, { decision: "approved" }), ctx(id))).status).toBe(409);
+  expect((await decide(post("http://x", 7, { decision: "approved" }), ctx(id))).status).toBe(404); // no step, so invisible to an approver
   const checks = auditRows("invoice", id).find((r) => r.action === "invoice.checks")!;
   expect(JSON.parse(checks.after!).flags.map((f: { code: string }) => f.code)).toContain("bank_change_unverified");
   expect(statusTrail(id)).toEqual(["needs_review"]);

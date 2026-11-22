@@ -1,4 +1,5 @@
 import { handle, requireRole } from "@/server/authz";
+import { readJson } from "@/server/body";
 import { getVendor, updateVendor, VendorError } from "@/server/vendors";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -20,7 +21,7 @@ export const PATCH = (request: Request, { params }: Ctx) =>
   handle(async () => {
     const user = requireRole(request, ["ap_clerk", "controller_admin"]);
     const id = Number((await params).id);
-    const body = await request.json().catch(() => null);
+    const body = await readJson(request);
     if (!Number.isInteger(id)) return Response.json({ error: "invalid id" }, { status: 400 });
     if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "body must be an object" }, { status: 400 });
     try { return Response.json(updateVendor(user, id, body)); } catch (e) { return fail(e); }

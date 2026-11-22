@@ -6,6 +6,7 @@ import { requestBankChange, VendorError } from "./vendors";
 import { getDb } from "./db";
 import { inspectUpload, storeUpload } from "./files";
 import { DEFAULT_PAGE, type Page } from "./paging";
+import { cleanText, hasMixedScripts, skeleton, stripBidi } from "./rules/unicode";
 
 export type EmailClass = "invoice" | "credit_note" | "statement" | "payment_inquiry" | "marketing" | "invoice_missing_attachment" | "bank_change" | "suspicious";
 export type Email = { email_id: string; from_address: string; subject: string; received_at?: string; body: string; attachments: string[] };
@@ -13,7 +14,9 @@ export type Email = { email_id: string; from_address: string; subject: string; r
 export type Classified = { class: EmailClass; attachments: string[]; reason?: string; bank?: { institution: string; transit: string; account: string } };
 
 // Lowercase and strip accents so "Relevé" and "crédit" match plain-ASCII rules.
-const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// Input is capped first: the rules below run on untrusted mail, and a 50,000-character body must not make them slow.
+export const MAX_MAIL_TEXT = 20_000;
+const norm = (s: string) => s.slice(0, MAX_MAIL_TEXT).normalize("NFKC").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 // Mail that tries to instruct the system. Each rule has a short reason the clerk reads in the inbox list.
 const SUSPICIOUS: [RegExp, string][] = [
@@ -26,7 +29,7 @@ const BANK_CHANGE = /\b(change|update|replac|switch|new)\w*\b[^.]{0,40}\b(bank|b
 
 // Institution, transit, account as labelled text or as 3-5-7+ digits. Anything else is not guessed.
 export function parseBankText(text: string) {
-  const t = norm(text);
+  const t = norm(text); // norm caps the length
   const labelled = [t.match(/institution\D{0,15}(\d{3})\b/), t.match(/transit\D{0,15}(\d{5})\b/), t.match(/account\D{0,20}(\d{7,12})\b/)];
   if (labelled.every(Boolean)) return { institution: labelled[0]![1], transit: labelled[1]![1], account: labelled[2]![1] };
   const m = t.match(/\b(\d{3})[\s-](\d{5})[\s-](\d{7,12})\b/);
@@ -64,6 +67,17 @@ export function classifyEmail(email: Email, senderVendorIds: number[] = []): Cla
   return { class: "marketing", attachments };
 }
 
+const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).toLowerCase();
+
+// Warning text when the sender's domain mixes scripts, or reads like a vendor's domain without being it ("pacifiс-fuel.com" with a Cyrillic с).
+export function senderLookalike(from: string, knownDomains: string[]): string | null {
+  const domain = domainOf(from);
+  if (!from.includes("@")) return null;
+  if (hasMixedScripts(domain)) return `sender_lookalike: the domain "${domain}" mixes alphabets`;
+  const twin = knownDomains.find((d) => d !== domain && skeleton(d) === skeleton(domain));
+  return twin ? `sender_lookalike: the domain "${domain}" looks like the vendor domain "${twin}"` : null;
+}
+
 export type ImportResult = { emailId: string; class: EmailClass; invoiceIds: number[]; flags: string[]; skipped?: "already_imported" };
 
 const inboxDir = () => process.env.INBOX_DIR || path.join(process.cwd(), "brim_ap_dataset");
@@ -75,13 +89,18 @@ export function readEmails(): Email[] {
 // Idempotent: an email already in inbox_mail is skipped, so re-running never doubles invoices.
 export function importInbox(user: User, emails: Email[] = readEmails()): ImportResult[] {
   const db = getDb();
+  const contactDomains = (db.prepare("SELECT ap_contact_email AS e FROM vendors WHERE ap_contact_email LIKE '%@%'").all() as { e: string }[]).map((r) => domainOf(r.e));
   return db.transaction(() =>
-    emails.map((email): ImportResult => {
+    emails.map((raw): ImportResult => {
+      // Sender is compared in NFKC form; text shown in the UI and stored in the audit log has bidi controls removed.
+      const email: Email = { ...raw, from_address: cleanText(raw.from_address ?? "").trim(), subject: stripBidi(raw.subject ?? ""), body: raw.body ?? "" };
       if (db.prepare("SELECT 1 FROM inbox_mail WHERE email_id = ?").get(email.email_id))
         return { emailId: email.email_id, class: "invoice", invoiceIds: [], flags: [], skipped: "already_imported" };
       const senders = db.prepare("SELECT id FROM vendors WHERE lower(ap_contact_email) = lower(?)").all(email.from_address ?? "") as { id: number }[];
       const c = classifyEmail(email, senders.map((v) => v.id));
       const flags: string[] = [];
+      const lookalike = senderLookalike(email.from_address, contactDomains);
+      if (lookalike) flags.push(lookalike);
       const invoiceIds: number[] = [];
       if (c.class === "invoice_missing_attachment") flags.push("missing_attachment");
       if (c.class === "suspicious") flags.push(`suspicious: ${c.reason}`); // nothing else happens to this mail

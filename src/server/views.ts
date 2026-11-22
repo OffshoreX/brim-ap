@@ -1,3 +1,4 @@
+import { csvCell } from "./csv";
 import type { User } from "@/contracts";
 import { getDb } from "./db";
 import { DEFAULT_PAGE, MAX_LIMIT, type Page } from "./paging";
@@ -204,9 +205,8 @@ const CSV_BATCH = 1000;
 const CSV_HEAD = ["id", "at", "actor_id", "action", "entity", "entity_id", "before", "after", "prev_hash", "row_hash"];
 type CsvRow = Record<string, string | number | null>;
 
-// Text cells are always quoted. A leading = + - @ would run as a formula in Excel, so those get a ' in front.
-const csvCell = (v: string | number | null) =>
-  v === null ? "" : typeof v === "number" ? String(v) : `"${(/^[=+\-@\t\r]/.test(v) ? "'" + v : v).replace(/"/g, '""')}"`;
+// Text cells are always quoted; the formula guard is the shared one in csv.ts.
+const auditCell = (v: string | number | null) => csvCell(v, true);
 
 // Oldest first, in batches of 1000 rows keyed on (at, id), so memory stays flat however big the log is and the existing
 // (entity|actor, at) indexes serve the sort. Each pull reads one batch; nothing holds a cursor open between pulls.
@@ -224,7 +224,7 @@ export function auditCsvStream(f: AuditFilter): ReadableStream<Uint8Array> {
     pull(c) {
       const rows = stmt.all(...w.args, ...after) as CsvRow[];
       if (rows.length) {
-        c.enqueue(enc.encode(rows.map((r) => CSV_HEAD.map((k) => csvCell(r[k])).join(",")).join("\r\n") + "\r\n"));
+        c.enqueue(enc.encode(rows.map((r) => CSV_HEAD.map((k) => auditCell(r[k])).join(",")).join("\r\n") + "\r\n"));
         const last = rows[rows.length - 1];
         after = [last.at as string, last.id as number];
       }

@@ -1,11 +1,12 @@
 import { handle, requireRole } from "@/server/authz";
+import { readJson } from "@/server/body";
 import { ApprovalError, decideInvoice } from "@/server/approvals";
 
 export const POST = (request: Request, { params }: { params: Promise<{ id: string }> }) =>
   handle(async () => {
     const user = requireRole(request, ["approver", "finance_manager", "controller_admin"]);
     const id = Number((await params).id);
-    const body = await request.json().catch(() => null);
+    const body = await readJson(request);
     const decision = body?.decision;
     const comment = body?.comment ?? "";
     if (!Number.isInteger(id)) return Response.json({ error: "invalid id" }, { status: 400 });

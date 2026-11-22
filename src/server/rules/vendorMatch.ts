@@ -8,7 +8,8 @@ export type VendorMatch =
   | { status: "ambiguous"; ids: number[] }
   | { status: "none" };
 
-const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase(); // "Rivière" -> "riviere"
+// NFKC first so compatibility forms match plain ones ("ＡＣＭＥ" -> "ACME"); capped so a huge name cannot make matching slow.
+const fold = (s: string) => s.slice(0, 500).normalize("NFKC").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase(); // "Rivière" -> "riviere"
 
 // Name as written: case, accents, spaces and punctuation ignored. "&" and "and" stay different words here.
 export const exactKey = (s: string) => fold(s).replace(/[^a-z0-9]/g, "");

@@ -5,6 +5,7 @@ import { getDb } from "./db";
 import { writeAudit } from "./audit";
 import { idempotentSync } from "./idempotency";
 import { exactKey, looseKey } from "./rules/vendorMatch";
+import { cleanText, hasMixedScripts, lookalikes } from "./rules/unicode";
 import { getVendor, VendorError } from "./vendors";
 import type { User } from "@/contracts";
 
@@ -12,7 +13,7 @@ const FIELDS = ["name", "category", "province_or_state", "country", "gst_hst_num
 const text = (v: unknown, field: string, max: number) => {
   if (v === undefined || v === null || v === "") return null;
   if (typeof v !== "string" || v.trim().length > max) throw new VendorError(400, `${field} must be text of at most ${max} characters`);
-  return v.trim();
+  return cleanText(v.trim()); // NFKC and no bidi controls, so what is stored is what the matcher compares
 };
 // Tax numbers are stored the way the dataset has them: upper case, letters and digits only.
 const taxNumber = (v: unknown, field: string, shape: RegExp, example: string) => {
@@ -52,6 +53,9 @@ function assertNewName(name: string) {
   const [exact, loose] = [exactKey(name), looseKey(name)];
   const clash = (getDb().prepare("SELECT id, name FROM vendors").all() as { id: number; name: string }[]).find((v) => exactKey(v.name) === exact || looseKey(v.name) === loose);
   if (clash) throw new VendorError(409, `A vendor with this name already exists: "${clash.name}" (vendor ${clash.id})`);
+  // Spelled differently but reads the same (a Cyrillic "а" in "Pacific Fuel"): refused, because it is how a fake vendor is created.
+  const twin = lookalikes(name, getDb().prepare("SELECT id, name FROM vendors").all() as { id: number; name: string }[], exactKey)[0];
+  if (twin) throw new VendorError(409, `This name looks like the existing vendor "${twin.name}" (vendor ${twin.id}) but is spelled with different letters`);
 }
 
 export function createVendor(user: User, body: Record<string, unknown>, key?: string | null) {
@@ -65,7 +69,8 @@ export function createVendor(user: User, body: Record<string, unknown>, key?: st
          VALUES (@name, @category, @province_or_state, @country, @gst_hst_number, @qst_number, @payment_terms_days, @preferred_payment_method, @ap_contact_email, @requires_po, @default_gl_account, 'pending_review', strftime('%Y-%m-%dT%H:%M:%fZ','now'), @by)`
       ).run({ ...v, by: user.id }).lastInsertRowid
     );
-    writeAudit({ actorId: user.id, action: "vendor.create", entity: "vendor", entityId: id, after: { ...v, status: "pending_review" } });
+    // A name that mixes alphabets is allowed but recorded as a warning for the approver (the audit row is what they read).
+    writeAudit({ actorId: user.id, action: "vendor.create", entity: "vendor", entityId: id, after: { ...v, status: "pending_review", ...(hasMixedScripts(v.name) ? { warnings: ["name mixes alphabets"] } : {}) } });
     return getVendor(id);
   });
 }

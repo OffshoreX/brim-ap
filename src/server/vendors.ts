@@ -3,6 +3,7 @@
 import { getDb } from "./db";
 import { writeAudit } from "./audit";
 import type { User } from "@/contracts";
+import { cleanText } from "./rules/unicode";
 
 export class VendorError extends Error {
   constructor(public status: 400 | 404 | 403 | 409, message: string) {
@@ -34,12 +35,15 @@ export function getVendor(id: number) {
   return { ...shape(v), bankChanges };
 }
 
-export function updateVendor(user: User, id: number, patch: Record<string, unknown>) {
+export function updateVendor(user: User, id: number, input: Record<string, unknown>) {
   const db = getDb();
+  // Copy only the allow-listed keys into a fresh object (own keys only), so "__proto__" or "constructor" can never ride along.
+  const bad = Object.keys(input).filter((k) => !(EDITABLE as readonly string[]).includes(k));
+  if (bad.length) throw new VendorError(400, `Not editable here: ${bad.join(", ")}`); // bank_* lands here
+  const patch: Record<string, unknown> = {};
+  for (const k of EDITABLE) if (Object.hasOwn(input, k)) patch[k] = typeof input[k] === "string" ? cleanText(input[k] as string) : input[k];
   const keys = Object.keys(patch);
   if (keys.length === 0) throw new VendorError(400, "Nothing to update");
-  const bad = keys.filter((k) => !(EDITABLE as readonly string[]).includes(k));
-  if (bad.length) throw new VendorError(400, `Not editable here: ${bad.join(", ")}`); // bank_* lands here
   return db.transaction(() => {
     const before = db.prepare("SELECT * FROM vendors WHERE id = ?").get(id) as Row | undefined;
     if (!before) throw new VendorError(404, "Vendor not found");

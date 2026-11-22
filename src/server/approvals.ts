@@ -6,6 +6,7 @@ import { transition } from "./invoiceStatus";
 import { routeApprovalChain } from "./rules/chain";
 import type { ChainStep } from "./rules/chain.types";
 import { convertCents } from "./rules/fx";
+import { visibleSql } from "./views";
 
 // Response types live here, not in contracts.ts (lead-owned).
 export type Decision = "approved" | "rejected";
@@ -79,7 +80,10 @@ type StepRow = { step_no: number; role: string; user_id: number; delegated_from_
 export function decideInvoice(user: User, invoiceId: number, decision: Decision, comment: string): DecisionResponse {
   const db = getDb();
   return db.transaction(() => {
-    const inv = db.prepare("SELECT status, requester_id FROM invoices WHERE id = ?").get(invoiceId) as { status: string; requester_id: number | null } | undefined;
+    // An invoice this user may not see is a 404, same as a missing one (visibleSql is the single visibility rule), so 403/409 never confirm it exists.
+    const v = visibleSql(user);
+    // The requester knows their own invoice exists, so they still get the specific 403 below.
+    const inv = db.prepare(`SELECT i.status, i.requester_id FROM invoices i WHERE i.id = ? AND (${v.sql} OR i.requester_id = ?)`).get(invoiceId, ...v.args, user.id) as { status: string; requester_id: number | null } | undefined;
     if (!inv) throw new ApprovalError(404, "Invoice not found");
     if (inv.status !== "pending_approval") throw new ApprovalError(409, `Invoice is ${inv.status}, not pending_approval`);
     // An approval needs every line coded; a rejection does not.
