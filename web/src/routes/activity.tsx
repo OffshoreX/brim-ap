@@ -26,8 +26,8 @@ function ActivityPage() {
             <thead><tr><Th>When</Th><Th>Step</Th><Th>Detail</Th><Th>Result</Th></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id}>
-                <Td className="num whitespace-nowrap">{formatDateTime(r.at)}</Td><Td className="font-medium">{r.step}</Td>
-                <Td>{r.invoiceId ? <Link to="/invoices/$id" params={{ id: r.invoiceId }} className="text-primary hover:underline">{r.message}</Link> : r.message}</Td>
+                <Td className="num whitespace-nowrap">{formatDateTime(r.createdAt)}</Td><Td className="font-medium">{r.step}</Td>
+                <Td>{r.invoiceId ? <Link to="/invoices/$id" params={{ id: String(r.invoiceId) }} className="text-primary hover:underline">{r.detail}</Link> : r.detail}</Td>
                 <Td><StatusPill status={r.status} /></Td>
               </tr>
             ))}</tbody>

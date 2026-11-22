@@ -22,7 +22,7 @@ const NAV: { to: string; label: string; icon: typeof FileText; cap?: Capability 
   { to: "/exceptions", label: "Exceptions", icon: AlertTriangle, cap: "exceptionsHistory" },
   { to: "/payments", label: "Payments", icon: Wallet, cap: "payments" },
   { to: "/vendors", label: "Vendors", icon: Building2, cap: "vendors" },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
+  { to: "/reports", label: "Reports", icon: BarChart3, cap: "reports" },
   { to: "/reconciliation", label: "Reconciliation", icon: Scale, cap: "reconciliation" },
   { to: "/audit", label: "Audit log", icon: ShieldCheck, cap: "audit" },
   { to: "/activity", label: "Activity log", icon: Activity, cap: "activity" },
@@ -50,6 +50,7 @@ export function AppShell({ children }: { children: (me: Me) => ReactNode }) {
   if (me.error) return <><MockBanner /><div className="p-8"><ErrorState error={me.error} onRetry={() => me.refetch()} /></div></>;
   const user = me.data;
 
+  // POST /api/logout clears the HttpOnly session cookie (the page cannot), then we drop cached data and go to /login.
   async function signOut() {
     setSigningOut(true);
     try { await api.logout(); } finally { qc.clear(); setSigningOut(false); void navigate({ to: "/login" }); }

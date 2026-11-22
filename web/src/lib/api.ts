@@ -12,17 +12,9 @@ export class ApiError extends Error {
   }
 }
 
-function friendly(status: number, serverMsg: string | undefined): string {
-  if (serverMsg) {
-    if (status === 409) return `${serverMsg} Someone else changed this — refresh and try again.`;
-    return serverMsg;
-  }
-  if (status === 409) return "Someone else changed this. Refresh and try again.";
-  if (status === 429) return "Too many attempts. Wait a moment and try again.";
-  if (status === 403) return "Your role can't see this.";
-  if (status === 404) return "Not found.";
-  return `Request failed (${status}).`;
-}
+// The server explains its own refusals as { error: "..." }; show that text as it is. Only a missing body gets a generic line.
+const failure = (status: number, data: unknown): ApiError =>
+  new ApiError(status, data && typeof data === "object" && "error" in data ? String((data as { error: unknown }).error) : `Request failed (${status}).`);
 
 interface Opts {
   method?: string;
@@ -36,7 +28,7 @@ async function raw(path: string, opts: Opts = {}): Promise<{ data: unknown; tota
   if (USE_MOCKS) {
     const { mockRequest } = await import("./mock");
     const r = await mockRequest(method, path, opts.body);
-    if (r.status >= 400) throw new ApiError(r.status, friendly(r.status, r.error));
+    if (r.status >= 400) throw failure(r.status, { error: r.error });
     return { data: r.data, total: r.total ?? null };
   }
   const headers: Record<string, string> = { Accept: "application/json" };
@@ -59,12 +51,11 @@ async function raw(path: string, opts: Opts = {}): Promise<{ data: unknown; tota
     }
   }
   if (!res.ok) {
-    const msg =
-      data && typeof data === "object" && "error" in data ? String((data as { error: unknown }).error) : undefined;
+    // 401 = no valid session cookie: send the user to the login page (but not while logging in or asking who we are).
     if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/login") && !path.startsWith("/me")) {
       window.location.assign("/login");
     }
-    throw new ApiError(res.status, friendly(res.status, msg));
+    throw failure(res.status, data);
   }
   const tc = res.headers.get("X-Total-Count");
   return { data, total: tc ? Number(tc) : null };
@@ -95,28 +86,43 @@ export function downloadUrl(path: string): string {
 }
 
 export const api = {
-  login: (email: string, password: string) => post<T.Me>("/login", { email, password }),
-  logout: async () => {
-    try {
-      await post("/logout");
-    } catch (e) {
-      if (!(e instanceof ApiError && e.status === 404)) throw e;
-    }
+  // POST /api/login -> { user: { id, name, role } }. The cookie is set by the server; callers re-read /me for the full user.
+  login: async (email: string, password: string) =>
+    (await post<{ user: Pick<T.Me, "id" | "name" | "role"> }>("/login", { email, password })).user,
+  // POST /api/logout -> { ok: true } and a Set-Cookie that clears the session. It always succeeds, even with no session.
+  logout: () => post<{ ok: true }>("/logout"),
+  // GET /api/me -> { user: <whole users row> }. The row has more columns (approval limit, manager...) than the app needs.
+  me: async (): Promise<T.Me> => {
+    const { user } = await get<{ user: T.Me }>("/me");
+    return { id: user.id, name: user.name, email: user.email, title: user.title ?? null, role: user.role };
   },
-  me: () => get<T.Me>("/me"),
   dashboard: () => get<T.Dashboard>("/dashboard"),
 
-  invoices: (p: { status?: string | undefined; limit: number; offset: number }) =>
-    list<T.InvoiceSummary>(`/invoices${qs(p)}`),
+  // GET /api/invoices rows carry only vendorId: no vendor name, due date or flags. /api/vendors is closed to employees and
+  // approvers, so each row's own invoice detail supplies them instead (every role may read the invoices it can list).
+  // A failed lookup leaves nulls, never a broken page. 25 rows per page = 25 small calls; the real fix is for the list
+  // endpoint to return these fields (server change, noted in the PR).
+  invoices: async (p: { status?: string | undefined; limit: number; offset: number }): Promise<T.Paged<T.InvoiceRow>> => {
+    const page = await list<T.InvoiceListItem>(`/invoices${qs(p)}`);
+    const details = await Promise.allSettled(page.items.map((i) => get<T.InvoiceDetail>(`/invoices/${i.id}`)));
+    const items = page.items.map((i, k): T.InvoiceRow => {
+      const d = details[k];
+      return d && d.status === "fulfilled"
+        ? { ...i, vendorName: d.value.vendorName, dueDate: d.value.dueDate, flagCount: d.value.flags.length }
+        : { ...i, vendorName: null, dueDate: null, flagCount: null };
+    });
+    return { items, total: page.total };
+  },
   invoiceCounts: () => get<T.InvoiceCounts>("/invoices/counts"),
-  invoice: (id: string) => get<T.InvoiceDetail>(`/invoices/${id}`),
-  invoiceTrail: (id: string) => get<T.TrailEntry[]>(`/invoices/${id}/trail`),
-  invoiceProcessLog: (id: string) => get<T.ProcessStep[]>(`/invoices/${id}/process-log`),
-  processInvoice: (id: string) => post(`/invoices/${id}/process`),
-  decide: (id: string, decision: "approve" | "reject", comment?: string) =>
-    post(`/invoices/${id}/decision`, { decision, comment }, true),
-  codeLine: (id: string, lineId: string, body: { glAccount: string; costCenter: string }) =>
-    raw(`/invoices/${id}/lines/${lineId}/coding`, { method: "PATCH", body }),
+  invoice: (id: string | number) => get<T.InvoiceDetail>(`/invoices/${id}`),
+  invoiceTrail: (id: string | number) => get<T.TrailEntry[]>(`/invoices/${id}/trail`),
+  invoiceProcessLog: (id: string | number) => get<T.ProcessStep[]>(`/invoices/${id}/process-log`),
+  processInvoice: (id: string | number) => post(`/invoices/${id}/process`),
+  // The server wants "approved" | "rejected" (past tense) and ignores a client-supplied approver: the stored chain decides.
+  decide: (id: string | number, decision: "approved" | "rejected", comment?: string) =>
+    post(`/invoices/${id}/decision`, { decision, comment: comment ?? "" }),
+  // Release works on a payment row (status "scheduled"), not on an invoice id.
+  releaseScheduled: (paymentId: number) => post("/payments/release", { paymentId }, true),
   upload: async (file: File) => {
     const form = new FormData();
     form.append("file", file);
@@ -134,13 +140,22 @@ export const api = {
 
   payments: () => get<T.Payment[]>("/payments"),
   readyToPay: () => get<T.ReadyToPay[]>("/payments/ready"),
-  preparePayment: (invoiceId: string) => post("/payments/prepare", { invoiceId }, true),
+  // Legacy shape (payments ticket): the real route wants { paymentId }, see releaseScheduled above.
   releasePayment: (invoiceId: string) => post("/payments/release", { invoiceId }, true),
+  preparePayment: (invoiceId: string) => post("/payments/prepare", { invoiceId }, true),
 
   reconciliation: () => get<T.Reconciliation>("/reconciliation"),
   runReconciliation: () => post<T.Reconciliation>("/reconciliation"),
-  aging: () => get<T.AgingReport>("/reports/aging"),
-  spend: () => get<T.SpendReport>("/reports/spend"),
+  // GET /api/reports/aging -> [{ bucket: "0-30", invoices, totalCadCents }] (open invoices past due; CAD only).
+  aging: async (): Promise<T.AgingReport> => {
+    const rows = await get<{ bucket: string; invoices: number; totalCadCents: number }[]>("/reports/aging");
+    return { currency: "CAD", buckets: rows.map((r) => ({ label: `${r.bucket} days past due`, amountCents: r.totalCadCents, count: r.invoices })) };
+  },
+  // GET /api/reports/spend?limit= -> [{ key: <vendor name>, invoices, totalCadCents }], biggest first.
+  spend: async (limit = 8): Promise<T.SpendReport> => {
+    const rows = await get<{ key: string; invoices: number; totalCadCents: number }[]>(`/reports/spend${qs({ limit })}`);
+    return { currency: "CAD", rows: rows.map((r) => ({ vendorName: r.key, amountCents: r.totalCadCents })) };
+  },
   discounts: () => get<T.DiscountReport>("/reports/discounts"),
 
   vendors: () => get<T.Vendor[]>("/vendors"),

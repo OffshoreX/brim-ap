@@ -9,7 +9,8 @@ export default defineConfig({
   vite: {
     server: {
       // Local runs: forward /api to the existing Next.js backend so cookies stay same-origin.
-      proxy: { "/api": { target: "http://localhost:3000", changeOrigin: false } },
+      // API_TARGET lets a second checkout point at a backend on another port.
+      proxy: { "/api": { target: process.env["API_TARGET"] ?? "http://localhost:3000", changeOrigin: false } },
     },
   },
 });

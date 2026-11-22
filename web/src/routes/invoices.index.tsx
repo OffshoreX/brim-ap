@@ -8,18 +8,18 @@ import { Money } from "@/components/Money";
 import { Pager } from "@/components/Pager";
 import { Button } from "@/components/ui/button";
 import { useInvoices } from "@/hooks/queries";
-import { formatDate } from "@/lib/format";
+import { formatDate, plural } from "@/lib/format";
 import { can } from "@/lib/roles";
 import { pageHead } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 import type { Me } from "@/lib/types";
 
-const LIMIT = 50;
+const LIMIT = 25; // each row costs one detail call in api.invoices, so keep pages small
 const TABS = [
   { value: "", label: "All" },
+  { value: "received", label: "Received" },
   { value: "needs_review", label: "Needs review" },
   { value: "pending_approval", label: "Pending approval" },
-  { value: "blocked", label: "Blocked" },
   { value: "approved", label: "Approved" },
   { value: "scheduled", label: "Scheduled" },
   { value: "paid", label: "Paid" },
@@ -39,7 +39,8 @@ export const Route = createFileRoute("/invoices/")({
 function InvoicesPage({ me }: { me: Me }) {
   const { status = "", offset = 0 } = Route.useSearch();
   const navigate = Route.useNavigate();
-  // Status filter is sent to the server, not filtered here.
+  // The status filter and paging are sent to the server (?status=&limit=&offset=); the total comes from X-Total-Count.
+  // The server returns newest first.
   const q = useInvoices({ status: status || undefined, limit: LIMIT, offset });
 
   return (
@@ -67,11 +68,11 @@ function InvoicesPage({ me }: { me: Me }) {
               <tbody>
                 {d.items.map((i) => (
                   <tr key={i.id} className="hover:bg-muted/50">
-                    <Td><Link to="/invoices/$id" params={{ id: i.id }} className="font-semibold text-primary hover:underline">{i.invoiceNumber}</Link></Td>
-                    <Td>{i.vendorName}</Td>
+                    <Td><Link to="/invoices/$id" params={{ id: String(i.id) }} className="font-semibold text-primary hover:underline">{i.invoiceNumber}</Link></Td>
+                    <Td>{i.vendorName ?? (i.vendorId === null ? "—" : `Vendor #${i.vendorId}`)}</Td>
                     <Td className="num whitespace-nowrap">{formatDate(i.invoiceDate)}</Td>
                     <Td className="num whitespace-nowrap">{formatDate(i.dueDate)}</Td>
-                    <Td><StatusPill status={i.status} /></Td>
+                    <Td><StatusPill status={i.status} />{i.flagCount ? <span className="ml-2 text-xs text-muted-foreground">{plural(i.flagCount, "flag")}</span> : null}</Td>
                     <Td right><Money cents={i.totalCents} currency={i.currency} className="font-semibold" /></Td>
                   </tr>
                 ))}
