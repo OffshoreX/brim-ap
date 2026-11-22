@@ -2,9 +2,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const COOKIE_NAME = "session";
 
+// Thrown when signing is impossible; the login route turns it into a plain message (the setting name stays in the log).
+export class SessionUnavailable extends Error {}
+
 function secret(): string {
   const s = process.env.SESSION_SECRET;
-  if (!s) throw new Error("SESSION_SECRET is not set (put it in .env.local)");
+  if (!s) throw new SessionUnavailable("SESSION_SECRET is not set (put it in .env.local)");
   return s;
 }
 

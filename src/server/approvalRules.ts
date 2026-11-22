@@ -47,9 +47,13 @@ export function listRules(): RuleResult {
 }
 
 // Only the amount is editable: the roles are the levels routeApprovalChain knows. Body is untrusted JSON.
-export function updateRule(actorId: number, id: number, body: unknown): RuleResult {
+export function updateRule(actorId: number, actorRole: string, id: number, body: unknown): RuleResult {
   const before = all().find((r) => r.id === id);
   if (!before) return err("Rule not found", 404);
+  // Separation of duties: nobody edits the limit that sets their own authority. A controller's own tier, and the CFO tier that
+  // caps the controller's band, go to another controller (or the CFO, who is not an editor).
+  const own = actorRole === before.extra_role || (actorRole === "controller_admin" && before.extra_role === "cfo");
+  if (own) return err("This rule applies to your own role. Another controller reviews changes to it.", 403);
   const over = (body as { over_cents?: unknown } | null)?.over_cents;
   if (!Number.isSafeInteger(over) || (over as number) < 0) return err("over_cents must be an integer number of cents, >= 0");
   // A higher level must never start below a lower one, or the chain would skip a step.
