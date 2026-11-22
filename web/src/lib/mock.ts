@@ -72,17 +72,13 @@ function buildInvoices(): T.InvoiceDetail[] {
   return out;
 }
 
-interface Store { invoices: T.InvoiceDetail[]; payments: T.Payment[]; rules: T.ApprovalRule[]; uploads: Record<string, number> }
+interface Store { invoices: T.InvoiceDetail[]; rules: T.ApprovalRule[]; uploads: Record<string, number> }
 let store: Store | null = null;
 function db(): Store {
   if (!store) {
     const invoices = buildInvoices();
     store = {
       invoices,
-      payments: invoices.filter((i) => i.status === "scheduled" || i.status === "paid").slice(0, 10).map((i) => ({
-        id: `p${i.id}`, invoiceId: String(i.id), invoiceNumber: i.invoiceNumber, vendorName: i.vendorName ?? "", amountCents: i.totalCents, currency: i.currency,
-        method: "eft", status: i.status === "paid" ? "settled" : "scheduled", scheduledFor: i.dueDate,
-      })),
       rules: [
         { id: 1, policy_id: "P02", over_cents: 1_000_000, extra_role: "finance_manager" },
         { id: 2, policy_id: "P03", over_cents: 5_000_000, extra_role: "controller_admin" },
@@ -96,8 +92,21 @@ function db(): Store {
 
 // /api/me returns the whole users row; /api/login returns only { id, name, role }.
 const ME = { id: 1, name: "Dana Okafor", email: "dana@harborline.ca", title: "Controller", role: "controller_admin" } as const satisfies T.Me;
-// Old-shaped summary for the pages that have not been moved to the real shapes yet (approvals, exceptions, payments).
-const summary = (i: T.InvoiceDetail): T.InvoiceSummary => ({ id: String(i.id), invoiceNumber: i.invoiceNumber, vendorId: String(i.vendorId), vendorName: i.vendorName ?? "", invoiceDate: i.invoiceDate, dueDate: i.dueDate ?? "", status: i.status, totalCents: i.totalCents, currency: i.currency, flagCount: i.flags.length });
+// Payments are not stored apart: like the server's /api/payments they are every invoice's payments, oldest first.
+const allPayments = (s: Store): T.Payment[] =>
+  s.invoices.flatMap((i) => i.payments.map((p): T.Payment => ({
+    id: p.id, invoiceId: i.id, invoiceNumber: i.invoiceNumber, vendorId: i.vendorId, vendorName: i.vendorName, invoiceTotalCents: i.totalCents,
+    method: p.method, status: p.status, scheduledDate: p.scheduledDate, paidAt: p.paidAt, amountCents: p.amountCents, currency: p.currency,
+    reference: p.reference, methodLabel: p.methodLabel, statusLabel: p.statusLabel,
+  }))).sort((a, b) => a.id - b.id);
+// An invoice as the server creates it on upload or import: just received, nothing extracted yet.
+const newInvoice = (s: Store): T.InvoiceDetail => {
+  const id = Math.max(...s.invoices.map((i) => i.id)) + 1;
+  const inv: T.InvoiceDetail = { ...s.invoices[0]!, id, invoiceNumber: `INV-${3000 + id}`, status: "received", flags: [], approvalChain: [], approvals: [], payments: [] };
+  s.invoices.push(inv);
+  return inv;
+};
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const listItem = (i: T.InvoiceDetail): T.InvoiceListItem => ({ id: i.id, status: i.status, vendorId: i.vendorId, invoiceNumber: i.invoiceNumber, invoiceDate: i.invoiceDate, totalCents: i.totalCents, currency: i.currency, requesterId: i.requesterId, sourceFile: i.sourceFile });
 
 const PIPELINE = ["received_file", "read_text", "matched_vendor", "extracted_lines", "checked_duplicates", "checked_bank", "applied_rules"];
@@ -137,11 +146,13 @@ export async function mockRequest(method: string, fullPath: string, body: unknow
     return { status: 200, data: all.slice(offset, offset + limit), total: all.length };
   }
   if (path === "/invoices/upload") {
-    const base = s.invoices[0]!;
-    const id = s.invoices.length + 1;
-    s.invoices.push({ ...base, id, invoiceNumber: `INV-${3000 + id}`, status: "received", flags: [], approvalChain: [], approvals: [], payments: [] });
-    s.uploads[String(id)] = Date.now();
-    return { status: 200, data: summary(s.invoices[id - 1]!) };
+    const name = (body as { name?: string } | undefined)?.name ?? "invoice.pdf";
+    if (/\.txt$/i.test(name)) return { status: 200, data: { results: [{ file: name, invoiceId: null, status: "error", flags: [], error: "Only PDF, PNG, JPG or WebP files are accepted" }] } };
+    const inv = newInvoice(s); // made at once, like the server, so the page can find it while the request is still open
+    s.uploads[String(inv.id)] = Date.now();
+    await sleep(PIPELINE.length * 900 + 200); // the real request also stays open until every step has run
+    inv.status = "pending_approval";
+    return { status: 200, data: { results: [{ file: name, invoiceId: inv.id, status: inv.status, flags: [], error: null }] } };
   }
   if (seg[0] === "invoices" && seg[1]) {
     const i = inv(seg[1]);
@@ -162,7 +173,8 @@ export async function mockRequest(method: string, fullPath: string, body: unknow
       if (d !== "approved" && d !== "rejected") return { status: 400, error: "decision must be approved or rejected" };
       if (i.status !== "pending_approval") return { status: 409, error: `Invoice is ${i.status}, not pending_approval` };
       i.status = d === "approved" ? "approved" : "rejected";
-      return { status: 200, data: { invoiceId: i.id, status: i.status } };
+      for (const st of i.approvalChain) if (st.status === "pending") st.status = d;
+      return { status: 200, data: { invoiceId: i.id, status: i.status, decision: d, stepNo: 1, nextApproverId: null, delegated: false, delegatedFromId: null } satisfies T.DecisionResult };
     }
     if (seg[2] === "process") return { status: 200, data: { invoiceId: i.id, status: i.status } };
   }
@@ -172,7 +184,8 @@ export async function mockRequest(method: string, fullPath: string, body: unknow
     if (!i) return { status: 409, error: "Payment is not scheduled" };
     i.status = "paid";
     for (const p of i.payments) if (p.id === id) Object.assign(p, { status: "settled", statusLabel: "Paid", paidAt: new Date().toISOString() });
-    return { status: 200, data: { paymentId: id, status: "settled" } };
+    const paid = i.payments.find((p) => p.id === id)!;
+    return { status: 200, data: { paymentId: paid.id, invoiceId: i.id, status: "paid", method: paid.method, reference: paid.reference ?? "", discountCents: 0 } satisfies T.ReleaseResult };
   }
   if (path === "/reports/aging") return { status: 200, data: [{ bucket: "0-30", invoices: 5, totalCadCents: 1_574_195 }, { bucket: "31-60", invoices: 2, totalCadCents: 310_000 }, { bucket: "61-90", invoices: 0, totalCadCents: 0 }, { bucket: "90+", invoices: 0, totalCadCents: 0 }] };
   if (path === "/reports/spend") {
@@ -187,24 +200,58 @@ export async function mockRequest(method: string, fullPath: string, body: unknow
     return { status: 200, data: g.slice(0, Number(q.get("limit") ?? 50)).map(([key, invoices, totalCadCents]) => ({ key, invoices, totalCadCents })), total: g.length };
   }
   if (path === "/process-log") return { status: 200, data: s.invoices.slice(0, Number(q.get("limit") ?? 20)).map((i, k) => ({ ...stepsFor(i, 5)[k % 5]!, id: k + 1, invoiceId: i.id, invoiceNumber: i.invoiceNumber, createdAt: `2026-11-21T${String(16 - (k % 10)).padStart(2, "0")}:0${k % 6}:00` })) };
-  if (path === "/approvals/inbox") return { status: 200, data: s.invoices.filter((i) => i.status === "pending_approval").slice(0, 12).map((i, k) => ({ ...summary(i), ageDays: 2 + k, flags: i.flags, whyYou: i.totalCents > 500_000 ? "Over 5,000.00 CAD — finance sign-off" : "You approve this vendor" })) };
-  if (path === "/exceptions") return { status: 200, data: s.invoices.filter((i) => i.status === "needs_review").slice(0, 8).map((i) => ({ id: `ex-${i.id}`, invoice: summary(i), flags: i.flags, createdAt: "2026-11-15T10:00:00Z" })) };
-  if (path === "/exceptions/historical") return { status: 200, data: [{ id: "h1", invoiceNumber: "INV-2311", vendorName: "Strait Telecom", resolution: "sent_to_approval", resolvedBy: "Priya Shah", resolvedAt: "2026-11-10T12:00:00Z", note: "PO confirmed by ops." }] };
+  // Lists below are paged like the server: ?limit=&offset= and the total in X-Total-Count.
+  const slice = (rows: unknown[]): Res => {
+    const limit = Math.min(Number(q.get("limit") ?? 50), 200);
+    const offset = Number(q.get("offset") ?? 0);
+    return { status: 200, data: rows.slice(offset, offset + limit), total: rows.length };
+  };
+  if (path === "/approvals/inbox") return slice(s.invoices.filter((i) => i.status === "pending_approval").map((i, k): T.InboxItem => ({
+    invoiceId: i.id, stepNo: 2, role: "finance_manager", reason: i.totalCents > 500_000 ? "P03 amount over the manager limit" : "P01 department manager", delegatedFromId: null,
+    invoiceNumber: i.invoiceNumber, vendorId: i.vendorId, vendorName: i.vendorName, totalCents: i.totalCents, currency: i.currency, invoiceDate: i.invoiceDate,
+    dueDate: i.dueDate, totalCadCents: i.totalCadCents, ageDays: 2 + k, flagCount: i.flags.length, topFlag: i.flags[0] ?? null,
+  })));
+  if (path === "/exceptions") return slice(s.invoices.filter((i) => i.status === "needs_review").map((i): T.ExceptionListItem => ({
+    id: i.id, invoiceNumber: i.invoiceNumber, vendorId: i.vendorId, totalCents: i.totalCents, currency: i.currency, flags: i.flags.map((f) => ({ code: f.code, message: f.message })),
+  })));
+  if (path === "/exceptions/historical") return slice([
+    { invoiceId: 36, invoiceRef: "AP-00036", paymentId: null, code: "missing_step_P05", label: "Required step skipped: new or pending-review vendor (P05)", reason: "finance_manager step required (P05 vendor onboarded within 60 days) but not recorded", readOnly: true },
+    { invoiceId: 52, invoiceRef: "AP-00052", paymentId: 52, code: "duplicate_payment", label: "Paid twice", reason: "Two payments of the same amount to the same vendor within 3 days", readOnly: true },
+  ] satisfies T.HistoricalException[]);
   if (seg[0] === "exceptions" && seg[2] === "resolve") {
-    const i = inv(seg[1]!.replace("ex-", ""));
-    if (i) { i.status = (body as { action: string }).action === "reject" ? "rejected" : "pending_approval"; i.flags = []; }
-    return { status: 200, data: {} };
-  }
-  if (path === "/inbox/import") return { status: 200, data: { imported: 3 } };
-  if (path === "/inbox/other") return { status: 200, data: [{ id: "e1", from: "newsletter@fleetnews.com", subject: "November fleet digest", receivedAt: "2026-11-20T08:00:00Z", reason: "No invoice attachment" }] };
-  if (path === "/payments") return { status: 200, data: s.payments };
-  if (path === "/payments/ready") return { status: 200, data: s.invoices.filter((i) => i.status === "approved").map((i) => ({ ...summary(i), method: "eft" })) };
-  if (path === "/payments/prepare") {
-    const i = inv(String((body as { invoiceId: string | number }).invoiceId));
+    const i = inv(seg[1]!);
     if (!i) return { status: 404, error: "Invoice not found" };
-    if (!s.payments.some((p) => p.invoiceId === String(i.id))) s.payments.unshift({ id: `p${Date.now()}`, invoiceId: String(i.id), invoiceNumber: i.invoiceNumber, vendorName: i.vendorName ?? "", amountCents: i.totalCents, currency: i.currency, method: "eft", status: "scheduled", scheduledFor: i.dueDate });
+    if (i.status !== "needs_review") return { status: 409, error: `Invoice is ${i.status}, not needs_review` };
+    const reject = (body as { action: string }).action === "reject";
+    i.status = reject ? "rejected" : "pending_approval";
+    return { status: 200, data: { invoiceId: i.id, status: i.status } satisfies T.ResolveResult };
+  }
+  if (path === "/inbox/import") {
+    const made = newInvoice(s);
+    return { status: 200, data: [
+      { emailId: "EM-101", class: "invoice", invoiceIds: [made.id], flags: [] },
+      { emailId: "EM-002", class: "invoice", invoiceIds: [], flags: [], skipped: "already_imported" },
+    ] satisfies T.ImportRow[] };
+  }
+  if (path === "/inbox/other") return slice([
+    { emailId: "EM-056", from: "ar@polarfreight.example", subject: "Statement of account - October 2026", receivedAt: "2026-11-02T09:14:00", class: "statement", reason: null, attachments: [], flags: [] },
+    { emailId: "EM-057", from: "ar@torqueindustrial.example", subject: "Where is payment for invoice 1743?", receivedAt: "2026-10-30T14:36:00", class: "payment_inquiry", reason: null, attachments: [], flags: [] },
+    { emailId: "EM-029", from: "ar@orionstrategy.example", subject: "Facture 279", receivedAt: "2026-10-29T15:33:00", class: "invoice", reason: null, attachments: ["a.pdf", "b.pdf"], flags: ["possible_duplicate_attachments"] },
+  ] satisfies T.OtherInboxEmail[]);
+  if (path === "/payments") return slice(allPayments(s));
+  if (path === "/payments/ready") return slice(s.invoices.filter((i) => i.status === "approved").map((i): T.ReadyToPay => ({
+    invoiceId: i.id, invoiceNumber: i.invoiceNumber, vendorName: i.vendorName, totalCents: i.totalCents, currency: i.currency, dueDate: i.dueDate,
+    suggestedMethod: { method: "EFT", label: "EFT", reason: "Vendor's preferred method is EFT" }, earlyPayDiscountCents: i.id % 5 === 0 ? 2_400 : null,
+  })));
+  if (path === "/payments/prepare") {
+    const i = inv(String((body as { invoiceId: number }).invoiceId));
+    if (!i) return { status: 404, error: "Invoice not found" };
+    if (i.status !== "approved") return { status: 409, error: `Invoice is ${i.status}, not approved` };
+    const id = Math.max(0, ...allPayments(s).map((p) => p.id)) + 1;
+    const scheduledDate = i.dueDate ?? "2026-11-30";
+    i.payments.push({ id, method: "EFT", methodLabel: "EFT", status: "scheduled", statusLabel: "Scheduled", scheduledDate, paidAt: null, amountCents: i.totalCents, currency: i.currency, reference: `BRIM-EFT-${id}` });
     i.status = "scheduled";
-    return { status: 200, data: {} };
+    return { status: 200, data: { paymentId: id, invoiceId: i.id, status: "scheduled", method: "EFT", scheduledDate, earlyPay: false, notes: [] } satisfies T.PrepareResult };
   }
   if (path === "/reconciliation" && method === "POST") return { status: 200, data: { changed: 2, summary: reconSummary() } satisfies T.ReconciliationRun };
   if (path === "/reconciliation") {

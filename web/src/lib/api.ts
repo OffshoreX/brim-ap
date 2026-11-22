@@ -16,6 +16,8 @@ export class ApiError extends Error {
 const failure = (status: number, data: unknown): ApiError =>
   new ApiError(status, data && typeof data === "object" && "error" in data ? String((data as { error: unknown }).error) : `Request failed (${status}).`);
 
+type Page = { limit: number; offset: number };
+
 interface Opts {
   method?: string;
   body?: unknown;
@@ -119,30 +121,59 @@ export const api = {
   invoiceProcessLog: (id: string | number) => get<T.ProcessStep[]>(`/invoices/${id}/process-log`),
   processInvoice: (id: string | number) => post(`/invoices/${id}/process`),
   // The server wants "approved" | "rejected" (past tense) and ignores a client-supplied approver: the stored chain decides.
+  // The route does not read Idempotency-Key (the stored chain and an atomic status check refuse a repeat with 409), but every
+  // money-adjacent click sends a fresh key so the call is safe the day the server starts honouring it.
   decide: (id: string | number, decision: "approved" | "rejected", comment?: string) =>
-    post(`/invoices/${id}/decision`, { decision, comment: comment ?? "" }),
+    post<T.DecisionResult>(`/invoices/${id}/decision`, { decision, comment: comment ?? "" }, true),
   // Release works on a payment row (status "scheduled"), not on an invoice id.
-  releaseScheduled: (paymentId: number) => post("/payments/release", { paymentId }, true),
-  upload: async (file: File) => {
+  releaseScheduled: (paymentId: number) => post<T.ReleaseResult>("/payments/release", { paymentId }, true),
+  // POST /api/invoices/upload (multipart, field "file") -> { results: [one per file] }. The request stays open until the file has
+  // been through every pipeline step, so the invoice id is only known at the end; the page finds it earlier with newestInvoiceId.
+  // A refused file is a 200 with results[0].error set, so that is turned into a thrown error here: callers see one failure path.
+  upload: async (file: File): Promise<T.UploadFileResult & { invoiceId: number }> => {
     const form = new FormData();
     form.append("file", file);
-    return (await raw("/invoices/upload", { method: "POST", form, body: USE_MOCKS ? { name: file.name } : undefined }))
-      .data as T.InvoiceSummary;
+    const r = (await raw("/invoices/upload", { method: "POST", form, idempotent: true, body: USE_MOCKS ? { name: file.name } : undefined }))
+      .data as { results: T.UploadFileResult[] };
+    const one = r.results[0];
+    if (!one) throw new ApiError(500, "The server returned no result for this file.");
+    if (one.invoiceId === null) throw new ApiError(400, one.error ?? "The file was not accepted.");
+    return { ...one, invoiceId: one.invoiceId };
   },
+  // Highest invoice id this user can see (the list is newest first). Taken before an upload, then polled, to spot the new row.
+  newestInvoiceId: async () => (await list<T.InvoiceListItem>("/invoices?limit=1")).items[0]?.id ?? 0,
 
-  approvalsInbox: () => get<T.InboxItem[]>("/approvals/inbox"),
-  exceptions: () => get<T.ExceptionItem[]>("/exceptions"),
-  historicalExceptions: () => get<T.HistoricalException[]>("/exceptions/historical"),
-  resolveException: (id: string, action: "send_to_approval" | "reject", note: string) =>
-    post(`/exceptions/${id}/resolve`, { action, note }, true),
-  importInbox: () => post<{ imported: number }>("/inbox/import"),
-  otherInbox: () => get<T.OtherInboxEmail[]>("/inbox/other"),
+  // The five lists below are paged by the server (?limit=&offset=, total in X-Total-Count).
+  approvalsInbox: (p: Page) => list<T.InboxItem>(`/approvals/inbox${qs(p)}`),
+  // GET /api/exceptions rows carry no vendor name, due date or flag severity; each row's invoice detail supplies them
+  // (same approach as invoices above). A failed lookup falls back to the row's own flags, shown as warnings.
+  exceptions: async (p: Page): Promise<T.Paged<T.ExceptionRow>> => {
+    const page = await list<T.ExceptionListItem>(`/exceptions${qs(p)}`);
+    const details = await Promise.allSettled(page.items.map((x) => get<T.InvoiceDetail>(`/invoices/${x.id}`)));
+    const items = page.items.map((x, k): T.ExceptionRow => {
+      const d = details[k];
+      const base = { id: x.id, invoiceNumber: x.invoiceNumber, vendorId: x.vendorId, totalCents: x.totalCents, currency: x.currency };
+      return d && d.status === "fulfilled"
+        ? { ...base, vendorName: d.value.vendorName, dueDate: d.value.dueDate, flags: d.value.flags }
+        : { ...base, vendorName: null, dueDate: null, flags: x.flags.map((f) => ({ ...f, severity: "warning" as const })) };
+    });
+    return { items, total: page.total };
+  },
+  historicalExceptions: (p: Page) => list<T.HistoricalException>(`/exceptions/historical${qs(p)}`),
+  // The server wants a note string (empty is fine) and refuses an invoice that is no longer in needs_review with 409.
+  resolveException: (id: number, action: "send_to_approval" | "reject", note: string) =>
+    post<T.ResolveResult>(`/exceptions/${id}/resolve`, { action, note }, true),
+  // POST /api/inbox/import -> one row per email. New invoices land as "received"; they still need "Run processing".
+  importInbox: async (): Promise<{ imported: number; skipped: number }> => {
+    const rows = await post<T.ImportRow[]>("/inbox/import");
+    return { imported: rows.reduce((n, r) => n + r.invoiceIds.length, 0), skipped: rows.filter((r) => r.skipped).length };
+  },
+  otherInbox: (p: Page) => list<T.OtherInboxEmail>(`/inbox/other${qs(p)}`),
 
-  payments: () => get<T.Payment[]>("/payments"),
-  readyToPay: () => get<T.ReadyToPay[]>("/payments/ready"),
-  // Legacy shape (payments ticket): the real route wants { paymentId }, see releaseScheduled above.
-  releasePayment: (invoiceId: string) => post("/payments/release", { invoiceId }, true),
-  preparePayment: (invoiceId: string) => post("/payments/prepare", { invoiceId }, true),
+  payments: (p: Page) => list<T.Payment>(`/payments${qs(p)}`),
+  readyToPay: (p: Page) => list<T.ReadyToPay>(`/payments/ready${qs(p)}`),
+  // No method sent: the server picks the vendor's preferred one (the same one readyToPay shows as suggestedMethod).
+  preparePayment: (invoiceId: number) => post<T.PrepareResult>("/payments/prepare", { invoiceId }, true),
 
   // GET /api/reconciliation: { summary, total, rows }, 25 rows a page. category filters rows (not the summary).
   reconciliation: (p: { category?: string | undefined; limit: number; offset: number }) =>
