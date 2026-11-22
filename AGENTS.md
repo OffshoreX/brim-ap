@@ -9,15 +9,15 @@ Read this first. Every agent in this repo follows it. The human is Ulysse (the l
 - Event: McGill CodeJam 16, Brim track. Code started after 7:00 PM Friday Nov 20 2026. Hard freeze: 12:00 PM Sunday Nov 22. Final push by 11:30 AM.
 - Judging: required features 40%, bonus features 15% (only scored if required ones work), clean UI 20%, technical depth 25% (live Q&A).
 - Demo path: TBD after the scope grill. Every ticket serves this path first.
-- Stack: provisional. TypeScript, Next.js, SQLite. Confirmed in docs/decisions.md after the grill.
+- Stack: TypeScript, Next.js API and SQLite on the server. The user interface is moving to web/ (Vite, TanStack Router, Tailwind, shadcn/ui, first drafted in Lovable). web/ is its own app with its own package.json; it talks to the server only through /api (dev proxy to localhost:3000). The old pages in src/app stay until web/ replaces them.
 - Contracts file: src/contracts.ts (shared types and API shapes). Created in ticket 1.
 
 ## 1. One owner per area
 
 | Agent | Owns | Never touches |
 |---|---|---|
-| ui | src/app/** except src/app/api/**, src/components/**, public/** | src/server/**, src/extract/**, src/app/api/**, db/**, scripts/** |
-| engine | src/server/**, src/app/api/**, db/**, scripts/** | rest of src/app/**, src/components/**, src/extract/** |
+| ui | web/**, src/app/** except src/app/api/**, src/components/**, public/** | src/server/**, src/extract/**, src/app/api/**, db/**, scripts/** |
+| engine | src/server/**, src/app/api/**, db/**, scripts/** | web/**, rest of src/app/**, src/components/**, src/extract/** |
 | extract | src/extract/** | everything else |
 | lead (Ulysse) | AGENTS.md, CLAUDE.md, README.md, docs/**, src/contracts.ts, package.json, config files | nothing is off limits |
 
@@ -64,3 +64,12 @@ Every PR description has two parts:
 - Fake a feature on the demo path with mock data.
 - Leave a TODO that makes something look finished when it is not.
 - Merge, force push, or rewrite history.
+
+## 7. The web/ app (UI source of truth)
+
+- web/ replaces the old UI. After the import, edit web/ here. Do not sync back to the Lovable project.
+- All network calls live in web/src/lib/api.ts, all response types in web/src/lib/types.ts. Types must match what the server really returns (check by calling the endpoint, not by guessing). If the server shape is awkward, adapt it in api.ts; do not change server files from a ui ticket.
+- Fetch on the client only (TanStack Query in components). No server functions or server-side data loading.
+- Sample data (VITE_USE_MOCKS) is for design preview only and must never be on in a demo or a PR screenshot of real behaviour. Mock data must be shaped exactly like the real API.
+- The plain-CSS-only and no-new-library rules apply to src/app. web/ may use its existing stack; any new dependency still needs the lead's yes.
+- Run: cd web && npm install && npm run dev (backend on port 3000 first). Before a PR touching web/: cd web && npm run build and npm test, and say so in the PR.
