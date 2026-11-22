@@ -152,8 +152,8 @@ function InvoiceView({ inv, me }: { inv: InvoiceDetail; me: Me }) {
           <Panel title="Approval chain"><ApprovalStepper chain={inv.approvalChain} decisions={inv.approvals} me={me} /></Panel>
           {inv.resolution && (
             <Panel title="Resolution">
-              <p className="text-sm"><span className="font-semibold">{inv.resolution.actorName}</span> <span className="text-muted-foreground">· <span className="num">{formatDateTime(inv.resolution.at)}</span></span></p>
-              <p className="mt-1 text-sm font-medium">{words(inv.resolution.action)}</p>
+              <p className="text-sm"><span className="font-semibold">{inv.resolution.byName}</span> <span className="text-muted-foreground">· <span className="num">{formatDateTime(inv.resolution.at)}</span></span></p>
+              <p className="mt-1 text-sm font-medium">{inv.resolution.action === "reject" ? "Rejected the invoice" : inv.resolution.action === "send_to_approval" ? "Sent it to approval" : words(inv.resolution.action)}</p>
               {inv.resolution.note && <p className="mt-1 text-sm text-foreground">“{inv.resolution.note}”</p>}
             </Panel>
           )}
