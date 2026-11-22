@@ -38,3 +38,9 @@ export function sessionCookie(userId: number): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   return `${COOKIE_NAME}=${signSession(userId)}; HttpOnly; SameSite=Lax; Path=/${secure}`;
 }
+
+// Same name, path and flags as sessionCookie, with an empty value that expired in the past, so the browser drops it.
+export function clearedSessionCookie(): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure}`;
+}
