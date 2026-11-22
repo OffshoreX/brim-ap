@@ -8,13 +8,13 @@ import { Money } from "@/components/Money";
 import { Pager } from "@/components/Pager";
 import { Button } from "@/components/ui/button";
 import { useInvoices } from "@/hooks/queries";
-import { formatDate, plural } from "@/lib/format";
+import { formatDate, plural, NOT_READ_YET, RUN_PROCESSING_HINT } from "@/lib/format";
 import { can } from "@/lib/roles";
 import { pageHead } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 import type { Me } from "@/lib/types";
 
-const LIMIT = 25; // each row costs one detail call in api.invoices, so keep pages small
+const LIMIT = 25;
 const TABS = [
   { value: "", label: "All" },
   { value: "received", label: "Received" },
@@ -68,8 +68,9 @@ function InvoicesPage({ me }: { me: Me }) {
               <tbody>
                 {d.items.map((i) => (
                   <tr key={i.id} className="hover:bg-muted/50">
-                    <Td><Link to="/invoices/$id" params={{ id: String(i.id) }} className="font-semibold text-primary hover:underline">{i.invoiceNumber}</Link></Td>
-                    <Td>{i.vendorName ?? (i.vendorId === null ? "—" : `Vendor #${i.vendorId}`)}</Td>
+                    <Td><Link to="/invoices/$id" params={{ id: String(i.id) }} className="font-semibold text-primary hover:underline">{i.invoiceNumber || NOT_READ_YET}</Link>
+                      {!i.invoiceNumber && i.sourceFile && <div className="text-xs text-muted-foreground">{i.sourceFile.split("/").pop()}</div>} {/* the API sends a server path; show the file name only */}</Td>
+                    <Td>{i.vendorName ?? (i.invoiceNumber ? "—" : <span className="text-muted-foreground">{RUN_PROCESSING_HINT}</span>)}</Td>
                     <Td className="num whitespace-nowrap">{formatDate(i.invoiceDate)}</Td>
                     <Td className="num whitespace-nowrap">{formatDate(i.dueDate)}</Td>
                     <Td><StatusPill status={i.status} />{i.flagCount ? <span className="ml-2 text-xs text-muted-foreground">{plural(i.flagCount, "flag")}</span> : null}</Td>

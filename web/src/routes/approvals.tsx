@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useAction, useApprovalsInbox } from "@/hooks/queries";
 import { api } from "@/lib/api";
 import { can } from "@/lib/roles";
-import { formatDate, plural } from "@/lib/format";
+import { formatDate, plural, NOT_READ_YET } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
 import type { InboxItem } from "@/lib/types";
 
@@ -53,7 +53,7 @@ function InboxRow({ item }: { item: InboxItem }) {
   const id = String(item.invoiceId);
   return (
     <tr className="hover:bg-muted/50">
-      <Td><Link to="/invoices/$id" params={{ id }} className="font-semibold text-primary hover:underline">{item.vendorName ?? "Unknown vendor"}</Link><div className="text-xs text-muted-foreground">{item.invoiceNumber}</div></Td>
+      <Td><Link to="/invoices/$id" params={{ id }} className="font-semibold text-primary hover:underline">{item.vendorName ?? NOT_READ_YET}</Link><div className="text-xs text-muted-foreground">{item.invoiceNumber || NOT_READ_YET}</div></Td>
       <Td className="num whitespace-nowrap">{formatDate(item.dueDate)}</Td>
       <Td right><Money cents={item.totalCents} currency={item.currency} className="font-semibold" /></Td>
       <Td right>{item.ageDays} d</Td>

@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAction, useExceptions, useHistoricalExceptions, useOtherInbox } from "@/hooks/queries";
 import { api } from "@/lib/api";
 import { can } from "@/lib/roles";
-import { formatDate, formatDateTime, plural } from "@/lib/format";
+import { formatDate, formatDateTime, plural, NOT_READ_YET } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
 import type { ExceptionRow, Me } from "@/lib/types";
 
@@ -66,7 +66,7 @@ function ExceptionsPage({ me }: { me: Me }) {
               <thead><tr><Th>Invoice</Th><Th>Finding</Th><Th>Why it was flagged</Th><Th>Payment</Th></tr></thead>
               <tbody>{d.items.map((r) => (
                 <tr key={`${r.invoiceId}-${r.code}-${r.paymentId ?? ""}`}>
-                  <Td><Link to="/invoices/$id" params={{ id: String(r.invoiceId) }} className="font-semibold text-primary hover:underline">{r.invoiceRef}</Link></Td>
+                  <Td><Link to="/invoices/$id" params={{ id: String(r.invoiceId) }} className="font-semibold text-primary hover:underline">{r.invoiceRef || NOT_READ_YET}</Link></Td>
                   <Td className="font-medium">{r.label}</Td><Td className="text-sm">{r.reason}</Td><Td className="num">{r.paymentId === null ? "—" : `#${r.paymentId}`}</Td>
                 </tr>
               ))}</tbody>
@@ -100,8 +100,8 @@ function ExceptionCard({ item }: { item: ExceptionRow }) {
     <Panel>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link to="/invoices/$id" params={{ id: String(item.id) }} className="text-lg font-bold text-foreground hover:text-primary">{item.vendorName ?? "Unknown vendor"}</Link>
-          <p className="text-sm text-muted-foreground">{item.invoiceNumber} · due <span className="num">{formatDate(item.dueDate)}</span></p>
+          <Link to="/invoices/$id" params={{ id: String(item.id) }} className="text-lg font-bold text-foreground hover:text-primary">{item.vendorName ?? NOT_READ_YET}</Link>
+          <p className="text-sm text-muted-foreground">{item.invoiceNumber || NOT_READ_YET} · due <span className="num">{formatDate(item.dueDate)}</span></p>
         </div>
         <Money cents={item.totalCents} currency={item.currency} className="text-xl font-bold" />
       </div>

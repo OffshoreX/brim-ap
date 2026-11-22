@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { useAction, usePayments, useReadyToPay } from "@/hooks/queries";
 import { api, downloadUrl } from "@/lib/api";
 import { can } from "@/lib/roles";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoney, NOT_READ_YET } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
 import type { Me, Payment, ReadyToPay } from "@/lib/types";
 
@@ -83,7 +83,7 @@ function ReadyRow({ r }: { r: ReadyToPay }) {
     .catch((e: Error) => toast.error(e.message));
   return (
     <tr>
-      <Td><Link to="/invoices/$id" params={{ id: String(r.invoiceId) }} className="font-semibold text-primary hover:underline">{r.invoiceNumber}</Link></Td>
+      <Td><Link to="/invoices/$id" params={{ id: String(r.invoiceId) }} className="font-semibold text-primary hover:underline">{r.invoiceNumber || NOT_READ_YET}</Link></Td>
       <Td>{r.vendorName ?? "—"}</Td><Td className="num">{formatDate(r.dueDate)}</Td>
       <Td>{r.suggestedMethod.label}<div className="text-xs text-muted-foreground">{r.suggestedMethod.reason}</div></Td>
       <Td right><Money cents={r.totalCents} currency={r.currency} className="font-semibold" />{r.earlyPayDiscountCents !== null && <div className="text-xs text-muted-foreground">Early-pay discount <Money cents={r.earlyPayDiscountCents} currency={r.currency} /></div>}</Td>
@@ -102,7 +102,7 @@ function PaymentRow({ p, canRelease }: { p: Payment; canRelease: boolean }) {
     .catch((e: Error) => toast.error(e.message, { duration: Infinity, closeButton: true }));
   return (
     <tr>
-      <Td><Link to="/invoices/$id" params={{ id: String(p.invoiceId) }} className="font-semibold text-primary hover:underline">{p.invoiceNumber}</Link></Td>
+      <Td><Link to="/invoices/$id" params={{ id: String(p.invoiceId) }} className="font-semibold text-primary hover:underline">{p.invoiceNumber || NOT_READ_YET}</Link></Td>
       <Td>{p.vendorName ?? "—"}</Td><Td className="num whitespace-nowrap">{formatDate(p.scheduledDate)}</Td><Td>{p.methodLabel}</Td>
       <Td><StatusPill status={p.status} label={p.statusLabel} /></Td>
       <Td className="num text-sm">{p.reference ?? "—"}</Td>
