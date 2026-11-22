@@ -89,6 +89,8 @@ export const api = {
   // POST /api/login -> { user: { id, name, role } }. The cookie is set by the server; callers re-read /me for the full user.
   login: async (email: string, password: string) =>
     (await post<{ user: Pick<T.Me, "id" | "name" | "role"> }>("/login", { email, password })).user,
+  // POST /api/logout -> { ok: true } and a Set-Cookie that clears the session. It always succeeds, even with no session.
+  logout: () => post<{ ok: true }>("/logout"),
   // GET /api/me -> { user: <whole users row> }. The row has more columns (approval limit, manager...) than the app needs.
   me: async (): Promise<T.Me> => {
     const { user } = await get<{ user: T.Me }>("/me");

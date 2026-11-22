@@ -110,6 +110,7 @@ export async function mockRequest(method: string, fullPath: string, body: unknow
   const inv = (id: string) => s.invoices.find((i) => String(i.id) === id);
 
   if (path === "/login") return { status: 200, data: { user: { id: ME.id, name: ME.name, role: ME.role } } };
+  if (path === "/logout") return { status: 200, data: { ok: true } };
   if (path === "/me") return { status: 200, data: { user: ME } };
   if (path === "/dashboard") {
     const countsByStatus: Partial<Record<T.InvoiceStatus, number>> = {};

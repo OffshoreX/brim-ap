@@ -6,7 +6,7 @@ import {
   ShieldCheck, Activity, Settings2, LogOut, PanelLeftClose, PanelLeftOpen, Anchor,
 } from "lucide-react";
 import { useMe } from "@/hooks/queries";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { can, ROLE_LABEL, type Capability } from "@/lib/roles";
 import { initials } from "@/lib/format";
 import { MockBanner } from "./MockBanner";
@@ -40,6 +40,7 @@ export function AppShell({ children }: { children: (me: Me) => ReactNode }) {
   const qc = useQueryClient();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [collapsed, setCollapsed] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     if (me.error instanceof ApiError && me.error.status === 401) void navigate({ to: "/login" });
@@ -49,11 +50,10 @@ export function AppShell({ children }: { children: (me: Me) => ReactNode }) {
   if (me.error) return <><MockBanner /><div className="p-8"><ErrorState error={me.error} onRetry={() => me.refetch()} /></div></>;
   const user = me.data;
 
-  // The server has no logout route yet and the session cookie is HttpOnly, so the page cannot end the session itself.
-  // "Switch user" drops cached data and opens the login page; signing in there replaces the cookie.
-  function switchUser() {
-    qc.clear();
-    void navigate({ to: "/login" });
+  // POST /api/logout clears the HttpOnly session cookie (the page cannot), then we drop cached data and go to /login.
+  async function signOut() {
+    setSigningOut(true);
+    try { await api.logout(); } finally { qc.clear(); setSigningOut(false); void navigate({ to: "/login" }); }
   }
 
   const items = NAV.filter((n) => !n.cap || can(user.role, n.cap));
@@ -86,8 +86,8 @@ export function AppShell({ children }: { children: (me: Me) => ReactNode }) {
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sidebar-primary text-sm font-bold text-sidebar-primary-foreground" aria-hidden>{initials(user.name)}</span>
               {!collapsed && <div className="min-w-0 leading-tight"><p className="truncate text-sm font-semibold text-sidebar-primary">{user.name}</p><p className="text-xs">{ROLE_LABEL[user.role]}</p></div>}
             </div>
-            <button onClick={switchUser} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
-              <LogOut className="h-[18px] w-[18px] shrink-0" aria-hidden />{collapsed ? <span className="sr-only">Switch user</span> : "Switch user"}
+            <button onClick={signOut} disabled={signingOut} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:opacity-60">
+              <LogOut className="h-[18px] w-[18px] shrink-0" aria-hidden />{collapsed ? <span className="sr-only">Sign out</span> : signingOut ? "Signing out…" : "Sign out"}
             </button>
             <button onClick={() => setCollapsed((c) => !c)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
               {collapsed ? <PanelLeftOpen className="h-[18px] w-[18px]" aria-hidden /> : <><PanelLeftClose className="h-[18px] w-[18px]" aria-hidden />Collapse</>}
