@@ -7,7 +7,9 @@ import { StatusPill } from "@/components/StatusPill";
 import { Money } from "@/components/Money";
 import { Pager } from "@/components/Pager";
 import { Button } from "@/components/ui/button";
-import { useInvoices } from "@/hooks/queries";
+import { InvoiceFilterBar } from "@/components/InvoiceFilterBar";
+import { useInvoices, useVendors } from "@/hooks/queries";
+import { describeFilters, hasFilters, parseFilters, toApi, type InvoiceFilters } from "@/lib/invoiceFilters";
 import { formatDate, plural, NOT_READ_YET, RUN_PROCESSING_HINT } from "@/lib/format";
 import { can } from "@/lib/roles";
 import { pageHead } from "@/lib/seo";
@@ -28,7 +30,11 @@ const TABS = [
 
 export const Route = createFileRoute("/invoices/")({
   ssr: false,
-  validateSearch: (s: Record<string, unknown>): { status?: string | undefined; offset?: number | undefined } => ({
+  validateSearch: (s: Record<string, unknown>): { status?: string | undefined; offset?: number | undefined } & InvoiceFilters => ({
+    ...parseFilters(s),
+    // keep a plain number as a number, or the router writes it back to the URL with quotes (min=%221000%22)
+    ...(typeof s["min"] === "number" ? { min: s["min"] as unknown as string } : {}),
+    ...(typeof s["max"] === "number" ? { max: s["max"] as unknown as string } : {}),
     status: typeof s["status"] === "string" && s["status"] ? s["status"] : undefined,
     offset: Number(s["offset"]) > 0 ? Number(s["offset"]) : undefined,
   }),
@@ -37,11 +43,24 @@ export const Route = createFileRoute("/invoices/")({
 });
 
 function InvoicesPage({ me }: { me: Me }) {
-  const { status = "", offset = 0 } = Route.useSearch();
+  const { status = "", offset = 0, ...raw } = Route.useSearch();
+  const filters = parseFilters(raw); // min and max may arrive as numbers; this makes them text again
   const navigate = Route.useNavigate();
-  // The status filter and paging are sent to the server (?status=&limit=&offset=); the total comes from X-Total-Count.
-  // The server returns newest first.
-  const q = useInvoices({ status: status || undefined, limit: LIMIT, offset });
+  // Status, filters and paging all live in the URL and are sent to the server (?status=&q=&vendorId=&...&limit=&offset=);
+  // the matching total comes from X-Total-Count. Changing a filter goes back to the first page.
+  const q = useInvoices({ status: status || undefined, ...toApi(filters), limit: LIMIT, offset });
+  const vendorsQ = useVendors(can(me.role, "vendors")); // the vendor filter only exists for roles the server lets read vendors
+  const vendors = can(me.role, "vendors") ? vendorsQ.data : undefined;
+  const filtered = hasFilters(filters);
+  // The router writes a text that looks like a number with quotes (min=%221000%22), so a plain amount goes into the URL as a number.
+  const urlValue = (v: string | undefined) => (v !== undefined && String(Number(v)) === v ? (Number(v) as unknown as string) : v); // validateSearch turns it back into text
+  const setFilters = (patch: Partial<InvoiceFilters>) => {
+    const next = { ...patch };
+    if ("min" in next) next.min = urlValue(next.min);
+    if ("max" in next) next.max = urlValue(next.max);
+    return navigate({ to: ".", search: (p) => ({ ...p, ...next, offset: undefined }) });
+  };
+  const clear = () => navigate({ to: ".", search: (p) => ({ status: p.status }) });
 
   return (
     <>
@@ -50,16 +69,19 @@ function InvoicesPage({ me }: { me: Me }) {
       <div role="tablist" aria-label="Filter by status" className="mb-4 flex flex-wrap gap-1.5">
         {TABS.map((t) => (
           <button key={t.value} role="tab" aria-selected={status === t.value}
-            onClick={() => navigate({ to: ".", search: { status: t.value || undefined } })}
+            onClick={() => navigate({ to: ".", search: (p) => ({ ...p, status: t.value || undefined, offset: undefined }) })} // keeps the filters
             className={cn("min-h-9 rounded-full border px-3.5 text-sm font-medium transition-colors", status === t.value ? "border-primary bg-primary text-primary-foreground" : "glass text-foreground hover:border-primary/50")}>
             {t.label}
           </button>
         ))}
       </div>
+      <InvoiceFilterBar filters={filters} vendors={vendors} onChange={setFilters} onClear={clear} />
       <QueryView q={q}>
         {(d) => d.items.length === 0 ? (
-          <Empty title="No invoices here" to={can(me.role, "upload") ? "/upload" : "/"} linkLabel={can(me.role, "upload") ? "Upload an invoice" : "Back to home"}>
-            {status ? "Nothing with this status right now." : "Invoices appear once they're uploaded or imported."}
+          <Empty title={filtered ? "No invoices match" : "No invoices here"} to={can(me.role, "upload") ? "/upload" : "/"} linkLabel={can(me.role, "upload") ? "Upload an invoice" : "Back to home"}>
+            {filtered
+              ? `Nothing matches ${[...(status ? [`status ${TABS.find((t) => t.value === status)?.label ?? status}`] : []), ...describeFilters(filters, vendors?.find((v) => v.id === filters.vendor)?.name)].join(", ")}. Try clearing a filter.`
+              : status ? "Nothing with this status right now." : "Invoices appear once they're uploaded or imported."}
           </Empty>
         ) : (
           <>
@@ -79,7 +101,7 @@ function InvoicesPage({ me }: { me: Me }) {
                 ))}
               </tbody>
             </Table>
-            <Pager offset={offset} limit={LIMIT} total={d.total} onPage={(o) => navigate({ to: ".", search: (p) => ({ ...p, offset: o || undefined }) })} />
+            <Pager matching offset={offset} limit={LIMIT} total={d.total} onPage={(o) => navigate({ to: ".", search: (p) => ({ ...p, offset: o || undefined }) })} />
           </>
         )}
       </QueryView>

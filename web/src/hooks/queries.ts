@@ -1,16 +1,17 @@
 // Data hooks. Each comment names the endpoint it calls. All fetching is client-side (TanStack Query).
 import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { SpendBy } from "@/lib/types";
+import type { InvoiceQuery } from "@/lib/invoiceFilters";
 
 // GET /api/me
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: api.me, retry: false, staleTime: 60_000 });
 // GET /api/dashboard
 export const useDashboard = () => useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard });
-// GET /api/invoices?status=&limit=&offset=
-export const useInvoices = (p: { status?: string | undefined; limit: number; offset: number }) =>
-  useQuery({ queryKey: ["invoices", p], queryFn: () => api.invoices(p), placeholderData: (prev) => prev });
+// GET /api/invoices?status=&limit=&offset= plus the search filters
+export const useInvoices = (p: InvoiceQuery) =>
+  useQuery({ queryKey: ["invoices", p], queryFn: () => api.invoices(p), retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2, /* a 400 (bad filter) will not fix itself */ placeholderData: (prev) => prev });
 // GET /api/invoices/counts
 export const useInvoiceCounts = () => useQuery({ queryKey: ["invoice-counts"], queryFn: api.invoiceCounts });
 // GET /api/invoices/:id
@@ -48,7 +49,7 @@ export const useSpend = (by: SpendBy = "vendor", enabled = true) =>
 // GET /api/reports/discounts
 export const useDiscounts = () => useQuery({ queryKey: ["reports", "discounts"], queryFn: api.discounts });
 // GET /api/vendors
-export const useVendors = () => useQuery({ queryKey: ["vendors"], queryFn: api.vendors });
+export const useVendors = (enabled = true) => useQuery({ queryKey: ["vendors"], queryFn: api.vendors, enabled });
 // GET /api/vendors/:id
 export const useVendor = (id: string) => useQuery({ queryKey: ["vendor", id], queryFn: () => api.vendor(id) });
 // GET /api/audit?limit=&offset=
