@@ -22,13 +22,16 @@ function VendorsPage() {
       <QueryView q={q}>
         {(vs) => vs.length === 0 ? <Empty title="No vendors yet" to="/upload" linkLabel="Upload an invoice">Vendors are created from invoices.</Empty> : (
           <Table>
-            <thead><tr><Th>Vendor</Th><Th>Email</Th><Th>Pays by</Th><Th>Bank</Th><Th>Status</Th></tr></thead>
+            <thead><tr><Th>Vendor</Th><Th>Category</Th><Th>Contact</Th><Th>Terms</Th><Th>Pays by</Th><Th>Bank</Th><Th>Status</Th></tr></thead>
             <tbody>{vs.map((v) => (
               <tr key={v.id} className="hover:bg-muted/50">
-                <Td><Link to="/vendors/$id" params={{ id: v.id }} className="font-semibold text-primary hover:underline">{v.name}</Link></Td>
-                <Td>{v.email ?? "—"}</Td><Td>{v.paymentMethod.toUpperCase()}</Td>
-                <Td className="num">{v.bankLast4 ? `•••• ${v.bankLast4}` : "—"}</Td>
-                <Td><div className="flex flex-wrap gap-1.5"><StatusPill status={v.status} />{v.pendingBankChange && <StatusPill status="pending_verification" />}</div></Td>
+                <Td><Link to="/vendors/$id" params={{ id: String(v.id) }} className="font-semibold text-primary hover:underline">{v.name}</Link></Td>
+                <Td>{v.category ?? "—"}</Td>
+                <Td>{v.ap_contact_email ?? "—"}</Td>
+                <Td>{v.payment_terms_days === null ? "—" : `Net ${v.payment_terms_days}`}</Td>
+                <Td>{v.preferred_payment_method ?? "—"}</Td>
+                <Td className="num">{v.bank_account_last4 ? `•••• ${v.bank_account_last4}` : "—"}</Td>
+                <Td><StatusPill status={v.status} /></Td>
               </tr>
             ))}</tbody>
           </Table>
