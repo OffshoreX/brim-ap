@@ -66,10 +66,10 @@ test("requester cannot decide their own invoice, even with an approver role", as
   expect(status(id)).toBe("pending_approval");
 });
 
-test("out-of-order approver gets 403 and nothing changes", async () => {
+test("out-of-order approver gets 403, one with no step on the invoice gets 404, and nothing changes", async () => {
   const id = invoice(15_000 * DOLLARS);
   expect((await ok(3, id)).status).toBe(403); // step 2 user tries first
-  expect((await ok(6, id)).status).toBe(403); // not in the chain at all
+  expect((await ok(6, id)).status).toBe(404); // not in the chain at all: the invoice is invisible to them, so no 403 that confirms it exists
   expect(status(id)).toBe("pending_approval");
   expect(getDb().prepare("SELECT COUNT(*) c FROM approvals").get()).toEqual({ c: 0 });
 });
@@ -107,7 +107,7 @@ test("reject at step 2 sets rejected, skips the rest and ends the chain", async 
 test("a delegate's decision is marked delegated; the approver on leave cannot decide", async () => {
   getDb().prepare("UPDATE users SET status='on_leave', delegate_user_id=7 WHERE id=4").run();
   const id = invoice(5000);
-  expect((await ok(4, id)).status).toBe(403);
+  expect((await ok(4, id)).status).toBe(404); // the step is the delegate's, so the invoice is not visible to the approver on leave
   expect(await (await ok(7, id)).json()).toMatchObject({ delegated: true, delegatedFromId: 4, status: "approved" });
   expect(getDb().prepare("SELECT approver_id, approver_role, delegated, delegated_from_id FROM approvals").all()).toEqual([
     { approver_id: 7, approver_role: "dept_manager", delegated: 1, delegated_from_id: 4 },
@@ -150,6 +150,7 @@ test("non-pending invoice gets 409, unknown id 404, bad body 400, and a finished
   await ok(4, done);
   expect((await ok(4, done)).status).toBe(409);
   getDb().prepare("INSERT INTO invoices (id,status,vendor_id,invoice_number,invoice_date,total_cents,currency,requester_id) VALUES (900,'received',1,'X','2026-01-01',1,'CAD',5)").run();
+  getDb().prepare("INSERT INTO approval_steps (invoice_id, step_no, role, user_id, status) VALUES (900,1,'dept_manager',4,'pending')").run(); // visible to user 4, wrong status
   expect((await ok(4, 900)).status).toBe(409);
   expect((await ok(4, 99)).status).toBe(404);
   expect((await post(4, invoice(5000), { decision: "maybe" })).status).toBe(400);

@@ -44,5 +44,8 @@ export function attemptLogin(input: { email: string; password: string; ip: strin
   return { status: 401, error: BAD_LOGIN };
 }
 
-// Client address for the per-IP limit. ponytail: the header is only trustworthy behind a proxy that sets it; the per-email limit still holds if it is forged.
-export const clientIp = (request: Request) => request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+// Client address for the per-IP limit. X-Forwarded-For is a header anyone can send, so it counts only when TRUST_PROXY=1
+// (a proxy we run overwrites or appends to it). Otherwise every caller shares one key and the per-email limit still applies.
+// With a proxy we take the LAST entry: that is the address our proxy saw; earlier entries are whatever the client claimed.
+export const clientIp = (request: Request) =>
+  process.env.TRUST_PROXY === "1" ? request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim() || "unknown" : "unknown";

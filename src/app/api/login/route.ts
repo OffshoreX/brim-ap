@@ -1,4 +1,5 @@
 import { handle } from "@/server/authz";
+import { readJson } from "@/server/body";
 import { getDb } from "@/server/db";
 import { checkOrigin } from "@/server/security";
 import { writeAudit } from "@/server/audit";
@@ -12,7 +13,7 @@ export const POST = (request: Request) =>
   });
 
 async function login(request: Request) {
-  const body = await request.json().catch(() => null);
+  const body = await readJson(request);
   if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "Expected a JSON object" }, { status: 400 });
 
   // Old demo path: body { userId }. Off (404, as if it did not exist) unless DEMO_PERSONA_PICKER=1.

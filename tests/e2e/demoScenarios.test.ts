@@ -224,7 +224,7 @@ test("scenario 2: changed bank details are held, cannot be approved, and proceed
   expect(JSON.parse(auditRows("invoice", id).find((r) => r.action === "invoice.checks")!.after!).flags.map((f: { code: string }) => f.code)).toContain("bank_details_differ");
 
   // Held means held: nobody can approve it, a clerk cannot push it through, and no payment can be prepared.
-  expect((await decideAs(DEPT_MANAGER, id)).status).toBe(409);
+  expect((await decideAs(DEPT_MANAGER, id)).status).toBe(404); // no chain exists, so the invoice is invisible to an approver
   const pushed = await resolveAs(CLERK, id);
   expect(pushed.status).toBe(409);
   expect(await errorOf(pushed)).toContain("A finance user must verify a bank change first");
@@ -264,7 +264,7 @@ test("scenario 2: changed bank details are held, cannot be approved, and proceed
   expect(email.flags.map((f) => f.code)).toContain("bank_change_unverified");
   expect(bankOf(v4.id)).toEqual(v4Bank);
   expect(getDb().prepare("SELECT 1 FROM audit_log WHERE action = 'vendor.bank_updated' AND entity_id = ?").get(String(v4.id))).toBeUndefined();
-  expect((await decideAs(DEPT_MANAGER, email.invoiceId)).status).toBe(409);
+  expect((await decideAs(DEPT_MANAGER, email.invoiceId)).status).toBe(404);
 
   await expectChainVerifies();
 });
@@ -298,8 +298,8 @@ test("scenario 3: self-approval is refused and escalated, leave goes to the dele
   const leave = await uploadAs(FACILITIES_STAFF, invoiceFor(v, "DEMO-3-B", [line("Maintenance", 300_000)]));
   expect(steps(leave.invoiceId)).toMatchObject([{ role: "dept_manager", user_id: FINANCE_MANAGER, delegated_from_id: ON_LEAVE_APPROVER }]);
   const onLeave = await decideAs(ON_LEAVE_APPROVER, leave.invoiceId);
-  expect(onLeave.status).toBe(403);
-  expect(await errorOf(onLeave)).toBe("You are not the next approver for this invoice");
+  expect(onLeave.status).toBe(404); // the step is the delegate's, so the invoice is invisible to the approver on leave
+  expect(await errorOf(onLeave)).toBe("Invoice not found");
   const delegated = await decideAs(FINANCE_MANAGER, leave.invoiceId);
   expect(delegated.status).toBe(200);
   expect(await delegated.json()).toMatchObject({ delegated: true, delegatedFromId: ON_LEAVE_APPROVER });

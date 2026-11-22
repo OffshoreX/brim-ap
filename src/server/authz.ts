@@ -5,7 +5,7 @@ import { checkOrigin } from "./security";
 import { COOKIE_NAME, readCookie, verifySession } from "./session";
 
 export class HttpError extends Error {
-  constructor(public status: 401 | 403 | 429, message: string) {
+  constructor(public status: 400 | 401 | 403 | 413 | 429, message: string) {
     super(message);
   }
 }
@@ -27,6 +27,12 @@ export function requireRole(request: Request, allowedRoles: readonly Role[]): Us
 // Anything else is a real bug: the details go to the server log only, the caller gets a plain 500
 // (no stack, SQL or file path).
 export async function handle(fn: () => Response | Promise<Response>): Promise<Response> {
+  const res = await run(fn);
+  res.headers.set("Cache-Control", "no-store"); // every API answer is per-user; nothing may sit in a browser or proxy cache
+  return res;
+}
+
+async function run(fn: () => Response | Promise<Response>): Promise<Response> {
   try {
     return await fn();
   } catch (e) {

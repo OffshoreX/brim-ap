@@ -1,3 +1,4 @@
+import { csvCell } from "./csv";
 import { randomBytes } from "node:crypto";
 import type { User } from "@/contracts";
 import { writeAudit } from "./audit";
@@ -163,8 +164,6 @@ export function formatCents(cents: number): string {
   return `${cents < 0 ? "-" : ""}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, "0")}`;
 }
 
-const csvCell = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-
 // Only released EFT payments go to the bank file.
 export function eftFileCsv(): string {
   const rows = getDb()
@@ -187,7 +186,7 @@ export function eftFileCsv(): string {
   }[];
   const lines = rows.map((r) =>
     [r.invoice_number, r.vendor ?? "", [r.bank_institution, r.bank_transit, r.bank_account].filter(Boolean).join("-"), formatCents(r.amount_cents), r.currency, r.reference ?? `PAY-${r.id}`]
-      .map(csvCell)
+      .map((c) => csvCell(c))
       .join(",")
   );
   return ["invoice_number,vendor,bank_details,amount,currency,reference", ...lines].join("\n") + "\n";

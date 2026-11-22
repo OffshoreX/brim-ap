@@ -51,7 +51,9 @@ export function updateUser(actor: User, id: number, patch: Record<string, unknow
     if ("approval_limit_cents" in patch && !(isId(patch.approval_limit_cents) && patch.approval_limit_cents >= 0))
       throw new UserError(400, "approval_limit_cents must be a whole number of cents, 0 or more");
 
-    const next = { ...before, ...patch } as Row;
+    // Only the allow-listed keys are copied over the stored row (a spread of the raw patch would let any key through).
+    const next = { ...before } as Row;
+    for (const k of EDITABLE) if (Object.hasOwn(patch, k)) (next as Record<string, unknown>)[k] = patch[k];
 
     // The company must always have someone who can manage users.
     const wasController = before.role === "controller_admin" && before.status === "active";

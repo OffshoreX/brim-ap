@@ -1,4 +1,5 @@
 import { handle, requireRole } from "@/server/authz";
+import { readJson } from "@/server/body";
 import { CodingError, setLineCoding, type CodingPatch } from "@/server/lineCoding";
 
 export const PATCH = (request: Request, { params }: { params: Promise<{ id: string; lineId: string }> }) =>
@@ -7,7 +8,7 @@ export const PATCH = (request: Request, { params }: { params: Promise<{ id: stri
     const p = await params;
     const invoiceId = Number(p.id);
     const lineId = Number(p.lineId);
-    const body = await request.json().catch(() => null);
+    const body = await readJson(request);
     if (!Number.isInteger(invoiceId) || !Number.isInteger(lineId)) return Response.json({ error: "invalid id" }, { status: 400 });
     if (!body || typeof body !== "object") return Response.json({ error: "body must be an object" }, { status: 400 });
     const patch: CodingPatch = {};

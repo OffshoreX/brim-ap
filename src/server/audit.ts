@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import { getDb } from "./db";
+import { cleanDeep } from "./rules/unicode";
 
 // Hash chain: each row stores the previous row's hash and a sha256 of (previous hash + its own fields).
 // Editing or deleting any row after the fact breaks every hash from there on. This file is the ONLY place hashes are computed.
@@ -12,7 +13,8 @@ type Fields = { at: string; actor_id: number | null; action: string; entity: str
 const hashRow = (prev: string, r: Fields) =>
   createHash("sha256").update(JSON.stringify([prev, r.actor_id, r.action, r.entity, r.entity_id, r.at, r.before, r.after])).digest("hex");
 
-const json = (v: unknown) => (v === undefined ? null : JSON.stringify(v));
+// Bidi control characters are removed from every text value before it is hashed and stored, so a log line cannot be shown reordered.
+const json = (v: unknown) => (v === undefined ? null : JSON.stringify(cleanDeep(v)));
 
 // Appends one chained row. immediate() takes the write lock first, so two processes cannot both read the same "last hash".
 export function appendAudit(

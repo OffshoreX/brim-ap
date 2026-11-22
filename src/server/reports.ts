@@ -1,3 +1,4 @@
+import { csvCell } from "./csv";
 import { getDb } from "./db";
 import type { Page } from "./paging";
 import { parseEarlyPayTerms } from "./rules/paymentTerms";
@@ -71,11 +72,8 @@ export function discountsReport(): DiscountRow[] {
   });
 }
 
-// CSV with one rule against spreadsheet formula injection: text starting with = + - @ gets a leading quote mark.
-const cell = (v: string | number) => {
-  const s = typeof v === "number" ? String(v) : /^[=+\-@]/.test(v) ? `'${v}` : v;
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
+// CSV cells go through the shared formula-injection guard in csv.ts.
+const cell = (v: string | number) => csvCell(v);
 export function toCsv<T extends Record<string, string | number>>(rows: T[], columns: (keyof T & string)[]): string {
   return [columns.join(","), ...rows.map((r) => columns.map((c) => cell(r[c])).join(","))].join("\r\n") + "\r\n";
 }
