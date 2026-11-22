@@ -25,7 +25,7 @@ const SEVERITY_RANK = { error: 0, warning: 1, info: 2 };
 
 // flags is JSON text. Every flag comes out as {code,message,severity}; a bare string or a missing/unknown severity
 // counts as a warning (never silently dropped). Sorted most severe first; the sort is stable, so stored order is kept within a level.
-function parseFlags(text: string): Flag[] {
+export function parseFlags(text: string): Flag[] {
   let raw: unknown;
   try {
     raw = JSON.parse(text);

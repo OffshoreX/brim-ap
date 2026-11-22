@@ -66,3 +66,20 @@ test("counts match list totals for a restricted employee and for a controller", 
   }
   expect((await (await counts(new Request("http://x", { headers: cookie(1) }))).json()).total).toBe(2);
 });
+
+// --- T78: list rows carry vendorName, dueDate, flagCount from one query ---
+test("rows carry vendor name, due date and flag count; unread rows get nulls; count and order unchanged", async () => {
+  const db = getDb();
+  db.prepare("INSERT INTO vendors (id,name) VALUES (1,'Acme Freight')").run();
+  addWith(1, "received"); // id 1: unread, no vendor
+  db.prepare(
+    `INSERT INTO invoices (status,vendor_id,invoice_number,invoice_date,due_date,total_cents,currency,requester_id,flags)
+     VALUES ('needs_review',1,'A-1','2026-11-01','2026-12-01',500,'CAD',1,?)`
+  ).run(JSON.stringify([{ code: "dup", message: "m", severity: "error" }, "bare"]));
+  const res = await get("", 3);
+  const rows = await res.json();
+  expect(rows.map((r: { id: number }) => r.id)).toEqual([2, 1]);
+  expect(res.headers.get("X-Total-Count")).toBe("2");
+  expect(rows[0]).toMatchObject({ vendorName: "Acme Freight", dueDate: "2026-12-01", flagCount: 2, invoiceNumber: "A-1", totalCents: 500 });
+  expect(rows[1]).toMatchObject({ vendorName: null, dueDate: null, flagCount: 0 });
+});

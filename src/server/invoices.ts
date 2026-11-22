@@ -2,6 +2,7 @@ import type { User } from "@/contracts";
 import { getDb } from "./db";
 import { INVOICE_STATUSES } from "./invoiceStatus";
 import { DEFAULT_PAGE, type Page } from "./paging";
+import { parseFlags } from "./views";
 
 export const isInvoiceStatus = (s: string) => (INVOICE_STATUSES as readonly string[]).includes(s);
 
@@ -16,11 +17,15 @@ export type InvoiceListItem = {
   currency: string;
   requesterId: number | null;
   sourceFile: string | null;
+  vendorName: string | null;
+  dueDate: string | null;
+  flagCount: number;
 };
 
 type Row = {
   id: number; status: string; vendor_id: number | null; invoice_number: string; invoice_date: string;
   total_cents: number; currency: string; requester_id: number | null; source_file: string | null;
+  vendor_name: string | null; due_date: string | null; flags: string | null;
 };
 
 // This is the only place that decides which invoices a role may see.
@@ -28,13 +33,13 @@ function visibleWhere(user: User, status?: string): { where: string; args: unkno
   const conds: string[] = [];
   const args: unknown[] = [];
   if (user.role === "employee") {
-    conds.push("requester_id = ?");
+    conds.push("i.requester_id = ?");
     args.push(user.id);
   } else if (user.role === "approver") {
-    conds.push("status = 'pending_approval'");
+    conds.push("i.status = 'pending_approval'");
   } // ap_clerk, finance_manager, controller_admin, auditor see all
   if (status) { // the caller validated it; still a bound parameter
-    conds.push("status = ?");
+    conds.push("i.status = ?");
     args.push(status);
   }
   return { where: conds.length ? "WHERE " + conds.join(" AND ") : "", args };
@@ -42,13 +47,13 @@ function visibleWhere(user: User, status?: string): { where: string; args: unkno
 
 export function countInvoices(user: User, status?: string): number {
   const v = visibleWhere(user, status);
-  return (getDb().prepare(`SELECT COUNT(*) n FROM invoices ${v.where}`).get(...v.args) as { n: number }).n;
+  return (getDb().prepare(`SELECT COUNT(*) n FROM invoices i ${v.where}`).get(...v.args) as { n: number }).n;
 }
 
 // One query for every status chip. Same visibility as the list, so counts always match list totals.
 export function invoiceCounts(user: User): { total: number; byStatus: Record<string, number> } {
   const v = visibleWhere(user);
-  const rows = getDb().prepare(`SELECT status, COUNT(*) n FROM invoices ${v.where} GROUP BY status`).all(...v.args) as { status: string; n: number }[];
+  const rows = getDb().prepare(`SELECT i.status, COUNT(*) n FROM invoices i ${v.where} GROUP BY i.status`).all(...v.args) as { status: string; n: number }[];
   const byStatus = Object.fromEntries(INVOICE_STATUSES.map((s) => [s, 0]));
   for (const r of rows) byStatus[r.status] = r.n;
   return { total: rows.reduce((t, r) => t + r.n, 0), byStatus };
@@ -59,8 +64,10 @@ export function listInvoices(user: User, page: Page = DEFAULT_PAGE, status?: str
   const v = visibleWhere(user, status);
   const rows = getDb()
     .prepare(
-      `SELECT id, status, vendor_id, invoice_number, invoice_date, total_cents, currency, requester_id, source_file
-       FROM invoices ${v.where} ORDER BY id DESC LIMIT ? OFFSET ?`
+      `SELECT i.id, i.status, i.vendor_id, i.invoice_number, i.invoice_date, i.total_cents, i.currency, i.requester_id, i.source_file,
+              v.name AS vendor_name, NULLIF(i.due_date, '') AS due_date, i.flags
+       FROM invoices i LEFT JOIN vendors v ON v.id = i.vendor_id
+       ${v.where} ORDER BY i.id DESC LIMIT ? OFFSET ?`
     )
     .all(...v.args, page.limit, page.offset) as Row[];
   return rows.map((r) => ({
@@ -73,5 +80,8 @@ export function listInvoices(user: User, page: Page = DEFAULT_PAGE, status?: str
     currency: r.currency,
     requesterId: r.requester_id,
     sourceFile: r.source_file,
+    vendorName: r.vendor_name,
+    dueDate: r.due_date,
+    flagCount: r.flags ? parseFlags(r.flags).length : 0, // same parsing as the detail view
   }));
 }
