@@ -2,6 +2,7 @@
 -- Duplicate check: same vendor, then invoice number or date.
 CREATE INDEX IF NOT EXISTS idx_invoices_vendor_number ON invoices(vendor_id, invoice_number);
 CREATE INDEX IF NOT EXISTS idx_invoices_vendor_date ON invoices(vendor_id, invoice_date);
+CREATE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(invoice_date);
 CREATE INDEX IF NOT EXISTS idx_invoices_total ON invoices(total_cents);
