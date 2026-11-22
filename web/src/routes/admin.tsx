@@ -5,14 +5,13 @@ import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { QueryView, Empty, Forbidden } from "@/components/States";
 import { Table, Th, Td } from "@/components/Table";
-import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAction, useApprovalRules } from "@/hooks/queries";
 import { api } from "@/lib/api";
 import { can, ROLE_LABEL } from "@/lib/roles";
 import { pageHead } from "@/lib/seo";
-import type { ApprovalRule } from "@/lib/types";
+import type { ApprovalRule, Role } from "@/lib/types";
 
 export const Route = createFileRoute("/admin")({
   ssr: false,
@@ -24,11 +23,11 @@ function AdminPage() {
   const q = useApprovalRules();
   return (
     <>
-      <PageHeader title="Approval rules" subtitle="Amount bands decide who signs off and how many steps it takes." />
+      <PageHeader title="Approval rules" subtitle="An invoice over each amount needs one more approver. Amounts are CAD; only the amount can be edited." />
       <QueryView q={q}>
         {(rules) => rules.length === 0 ? <Empty title="No rules defined" /> : (
           <Table>
-            <thead><tr><Th>Rule</Th><Th>Final approver</Th><Th right>From</Th><Th right>Up to</Th><Th center>Steps</Th><Th /></tr></thead>
+            <thead><tr><Th>Policy</Th><Th>Invoice total over (CAD)</Th><Th>Extra approver</Th><Th /></tr></thead>
             <tbody>{rules.map((r) => <RuleRow key={r.id} r={r} />)}</tbody>
           </Table>
         )}
@@ -37,19 +36,21 @@ function AdminPage() {
   );
 }
 
+// "10000.50" -> 1000050. Whole cents only, as text, so no float ever reaches the server.
+const toCents = (t: string) => (/^\d{1,10}(\.\d{1,2})?$/.test(t.trim()) ? Math.round(Number(t) * 100) : null);
+
 function RuleRow({ r }: { r: ApprovalRule }) {
-  const [steps, setSteps] = useState(String(r.steps));
-  // PUT /api/admin/approval-rules/:id
-  const save = useAction(() => api.updateApprovalRule(r.id, { ...r, steps: Number(steps) }), [["approval-rules"]]);
-  const dirty = Number(steps) !== r.steps;
+  const [amount, setAmount] = useState((r.over_cents / 100).toFixed(2));
+  const cents = toCents(amount);
+  // PUT /api/admin/approval-rules/:id { over_cents }. The server also refuses amounts that would make the levels fall.
+  const save = useAction((c: number) => api.updateApprovalRule(r.id, c), [["approval-rules"], ["audit"]]);
+  const dirty = cents !== r.over_cents;
   return (
     <tr>
-      <Td className="font-semibold">{r.name}</Td>
-      <Td>{ROLE_LABEL[r.approverRole]}</Td>
-      <Td right><Money cents={r.minCents} currency={r.currency} /></Td>
-      <Td right>{r.maxCents === null ? "No limit" : <Money cents={r.maxCents} currency={r.currency} />}</Td>
-      <Td center><Input aria-label={`Steps for ${r.name}`} type="number" min={1} max={5} value={steps} onChange={(e) => setSteps(e.target.value)} className="mx-auto h-9 w-20 text-center" /></Td>
-      <Td>{dirty && <Button disabled={save.isPending} onClick={() => save.mutateAsync(undefined).then(() => toast.success("Rule saved")).catch((e: Error) => toast.error(e.message))}>{save.isPending ? "Saving…" : "Save"}</Button>}</Td>
+      <Td className="font-semibold">{r.policy_id ?? `Rule ${r.id}`}</Td>
+      <Td><Input aria-label={`Threshold for ${r.policy_id ?? r.id}`} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={cents === null} className="num h-9 w-40 text-right" /></Td>
+      <Td>{r.extra_role === "cfo" ? "CFO" : ROLE_LABEL[r.extra_role as Role] ?? r.extra_role}</Td>
+      <Td>{dirty && <Button disabled={cents === null || save.isPending} onClick={() => cents !== null && save.mutateAsync(cents).then(() => toast.success("Rule saved")).catch((e: Error) => { toast.error(e.message); setAmount((r.over_cents / 100).toFixed(2)); })}>{save.isPending ? "Saving…" : "Save"}</Button>}</Td>
     </tr>
   );
 }

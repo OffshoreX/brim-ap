@@ -1,6 +1,7 @@
 // Data hooks. Each comment names the endpoint it calls. All fetching is client-side (TanStack Query).
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import type { SpendBy } from "@/lib/types";
 
 // GET /api/me
 export const useMe = () => useQuery({ queryKey: ["me"], queryFn: api.me, retry: false, staleTime: 60_000 });
@@ -32,20 +33,23 @@ export const useOtherInbox = (enabled: boolean) => useQuery({ queryKey: ["inbox-
 export const usePayments = () => useQuery({ queryKey: ["payments"], queryFn: api.payments });
 // GET /api/payments/ready
 export const useReadyToPay = (enabled: boolean) => useQuery({ queryKey: ["payments", "ready"], queryFn: api.readyToPay, enabled });
-// GET /api/reconciliation
-export const useReconciliation = () => useQuery({ queryKey: ["reconciliation"], queryFn: api.reconciliation });
+// GET /api/reconciliation?category=&limit=&offset=
+export const useReconciliation = (p: { category?: string | undefined; limit: number; offset: number }) =>
+  useQuery({ queryKey: ["reconciliation", p], queryFn: () => api.reconciliation(p), placeholderData: (prev) => prev });
 // GET /api/reports/aging
 export const useAging = (enabled = true) => useQuery({ queryKey: ["reports", "aging"], queryFn: api.aging, enabled });
-// GET /api/reports/spend?limit=
-export const useSpend = (enabled = true) => useQuery({ queryKey: ["reports", "spend"], queryFn: () => api.spend(), enabled });
+// GET /api/reports/spend?by=&limit=
+export const useSpend = (by: SpendBy = "vendor", enabled = true) =>
+  useQuery({ queryKey: ["reports", "spend", by], queryFn: () => api.spend(by), placeholderData: (prev) => prev, enabled });
 // GET /api/reports/discounts
 export const useDiscounts = () => useQuery({ queryKey: ["reports", "discounts"], queryFn: api.discounts });
 // GET /api/vendors
 export const useVendors = () => useQuery({ queryKey: ["vendors"], queryFn: api.vendors });
 // GET /api/vendors/:id
 export const useVendor = (id: string) => useQuery({ queryKey: ["vendor", id], queryFn: () => api.vendor(id) });
-// GET /api/audit
-export const useAudit = () => useQuery({ queryKey: ["audit"], queryFn: api.audit });
+// GET /api/audit?limit=&offset=
+export const useAudit = (p: { limit: number; offset: number }) =>
+  useQuery({ queryKey: ["audit", p], queryFn: () => api.audit(p), placeholderData: (prev) => prev });
 // GET /api/process-log?limit=
 export const useProcessLog = (limit: number, enabled = true) =>
   useQuery({ queryKey: ["process-log", limit], queryFn: () => api.processLog(limit), enabled });
@@ -53,7 +57,7 @@ export const useProcessLog = (limit: number, enabled = true) =>
 export const useApprovalRules = () => useQuery({ queryKey: ["approval-rules"], queryFn: api.approvalRules });
 
 /** Mutation helper: runs fn, then invalidates the listed query keys. */
-export function useAction<A>(fn: (a: A) => Promise<unknown>, invalidate: string[][]) {
+export function useAction<A, R = unknown>(fn: (a: A) => Promise<R>, invalidate: string[][]) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,

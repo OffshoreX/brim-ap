@@ -28,6 +28,7 @@ export const CAN = {
   reports: R("finance_manager", "controller_admin", "auditor"), // /api/reports/*
   downloads: R("finance_manager", "controller_admin", "auditor"),
   reconciliation: R("finance_manager", "controller_admin", "auditor"),
+  runReconciliation: R("finance_manager", "controller_admin"), // POST /api/reconciliation
   vendors: R("ap_clerk", "finance_manager", "controller_admin", "auditor"),
   bankChange: R("ap_clerk", "finance_manager", "controller_admin"),
   bankVerify: R("finance_manager", "controller_admin"),
