@@ -12,7 +12,7 @@ import { ConfirmInline } from "@/components/ConfirmInline";
 import { Pager } from "@/components/Pager";
 import { Button } from "@/components/ui/button";
 import { useAction, usePayments, useReadyToPay } from "@/hooks/queries";
-import { api, downloadUrl } from "@/lib/api";
+import { api, downloadUrl, errorText } from "@/lib/api";
 import { can } from "@/lib/roles";
 import { formatDate, formatMoney, NOT_READ_YET } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
@@ -80,7 +80,7 @@ function ReadyRow({ r }: { r: ReadyToPay }) {
   const prep = useAction(() => api.preparePayment(r.invoiceId), [...REFRESH, ["invoice", String(r.invoiceId)]]);
   const go = () => prep.mutateAsync(undefined)
     .then((p) => notify.money(`Payment scheduled for ${r.invoiceNumber} on ${formatDate(p.scheduledDate)}`, p.notes.length ? { description: p.notes.join(" ") } : {}))
-    .catch((e: Error) => notify.error(e.message));
+    .catch((e: Error) => notify.error(errorText(e)));
   return (
     <tr>
       <Td><Link to="/invoices/$id" params={{ id: String(r.invoiceId) }} className="font-semibold text-primary hover:underline">{r.invoiceNumber || NOT_READ_YET}</Link></Td>
@@ -99,7 +99,7 @@ function PaymentRow({ p, canRelease }: { p: Payment; canRelease: boolean }) {
   const vendor = p.vendorName ?? "the vendor";
   const go = () => rel.mutateAsync(undefined)
     .then((r) => notify.money(`Released ${formatMoney(p.amountCents, p.currency)} to ${vendor} by ${p.methodLabel}. Reference ${r.reference}`))
-    .catch((e: Error) => notify.error(e.message));
+    .catch((e: Error) => notify.error(errorText(e)));
   return (
     <tr>
       <Td><Link to="/invoices/$id" params={{ id: String(p.invoiceId) }} className="font-semibold text-primary hover:underline">{p.invoiceNumber || NOT_READ_YET}</Link></Td>

@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, Th, Td } from "@/components/Table";
 import { useAction, useVendor } from "@/hooks/queries";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { can } from "@/lib/roles";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
@@ -27,7 +27,7 @@ export const Route = createFileRoute("/vendors/$id")({
 function VendorPage({ me }: { me: Me }) {
   const { id } = Route.useParams();
   const q = useVendor(id);
-  return <QueryView q={q}>{(v) => <VendorView v={v} me={me} />}</QueryView>;
+  return <QueryView q={q} missing="That vendor doesn't exist or you can't see it.">{(v) => <VendorView v={v} me={me} />}</QueryView>;
 }
 
 const CHANNELS = ["email", "phone", "vendor_portal"]; // the values the dataset uses for how the request arrived
@@ -45,7 +45,7 @@ function VendorView({ v, me }: { v: VendorDetail; me: Me }) {
   const bankValid = bank.institution.length === 3 && bank.transit.length === 5 && bank.account.length >= 4;
   const mine = pending?.changed_by_user_id === me.id; // looks only: the server refuses a self-verify with its own message
   const done = (msg: string) => () => notify.money(msg);
-  const fail = (e: Error) => notify.error(e.message); // the server's own {error} text
+  const fail = (e: Error) => notify.error(errorText(e)); // the server's own {error} text
 
   return (
     <>

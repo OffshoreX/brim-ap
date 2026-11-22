@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ErrorText } from "@/components/ErrorText";
 import { useAction } from "@/hooks/queries";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { EMPTY, fieldOfError, TEXT, vendorBody, type Form } from "@/lib/vendorForm";
 import type { NewVendor } from "@/lib/types";
 
@@ -29,7 +29,7 @@ export function VendorForm({ open, onOpenChange }: { open: boolean; onOpenChange
       setF(EMPTY);
       onOpenChange(false);
       void navigate({ to: "/vendors/$id", params: { id: String(v.id) } });
-    }).catch((err: Error) => setError(err.message));
+    }).catch((err: Error) => setError(errorText(err)));
   };
 
   // One labelled box; the server's message for that field shows under it.

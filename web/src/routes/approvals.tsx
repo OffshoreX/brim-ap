@@ -9,7 +9,7 @@ import { Money } from "@/components/Money";
 import { Pager } from "@/components/Pager";
 import { Button } from "@/components/ui/button";
 import { useAction, useApprovalsInbox } from "@/hooks/queries";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { can } from "@/lib/roles";
 import { formatDate, plural, NOT_READ_YET } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
@@ -60,7 +60,7 @@ function InboxRow({ item }: { item: InboxItem }) {
       <Td className="max-w-xs">{item.flagCount === 0 || !item.topFlag ? <span className="text-muted-foreground">None</span> : <span><span className={blocking ? "font-semibold text-bad-foreground" : "font-semibold text-warn-foreground"}>{plural(item.flagCount, "flag")}{blocking ? " · blocking" : ""}</span> <span className="text-sm">— {item.topFlag.message}</span></span>}</Td>
       <Td className="text-sm">{item.reason}{item.delegatedFromId !== null && <span className="text-muted-foreground"> · delegated to you</span>}</Td>
       <Td>{blocking ? <Link to="/invoices/$id" params={{ id }} className="text-sm font-semibold text-primary hover:underline">Review</Link> :
-        <Button disabled={approve.isPending} onClick={() => approve.mutateAsync(undefined).then(() => notify.money(`Approved ${item.invoiceNumber}`)).catch((e: Error) => notify.error(e.message))}>{approve.isPending ? "Approving…" : "Approve"}</Button>}</Td>
+        <Button disabled={approve.isPending} onClick={() => approve.mutateAsync(undefined).then(() => notify.money(`Approved ${item.invoiceNumber}`)).catch((e: Error) => notify.error(errorText(e)))}>{approve.isPending ? "Approving…" : "Approve"}</Button>}</Td>
     </tr>
   );
 }

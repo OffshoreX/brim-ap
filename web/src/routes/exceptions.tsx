@@ -13,7 +13,7 @@ import { Table, Th, Td } from "@/components/Table";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAction, useExceptions, useHistoricalExceptions, useOtherInbox } from "@/hooks/queries";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { can } from "@/lib/roles";
 import { formatDate, formatDateTime, plural, NOT_READ_YET } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
@@ -41,7 +41,7 @@ function ExceptionsPage({ me }: { me: Me }) {
   const importer = useAction(() => api.importInbox(), [...REFRESH, ["inbox-other"]]);
   const doImport = () => importer.mutateAsync(undefined)
     .then((r) => notify.info(`Imported ${plural(r.imported, "new invoice")} from the inbox${r.skipped ? ` (${plural(r.skipped, "email")} already imported)` : ""}`, r.imported ? { description: "They arrive as Received. Open each one and choose Run processing." } : {}))
-    .catch((e: Error) => notify.error(e.message));
+    .catch((e: Error) => notify.error(errorText(e)));
 
   return (
     <>
@@ -95,7 +95,7 @@ function ExceptionCard({ item }: { item: ExceptionRow }) {
   const [note, setNote] = useState("");
   // One lock for both buttons: while a decision is in flight neither can be pressed, and a repeat is refused by the server (409).
   const resolve = useAction((a: "send_to_approval" | "reject") => api.resolveException(item.id, a, note), [...REFRESH, ["invoice", String(item.id)]]);
-  const go = (a: "send_to_approval" | "reject") => resolve.mutateAsync(a).then(() => notify.money(a === "reject" ? "Invoice rejected" : "Sent to approval")).catch((e: Error) => notify.error(e.message));
+  const go = (a: "send_to_approval" | "reject") => resolve.mutateAsync(a).then(() => notify.money(a === "reject" ? "Invoice rejected" : "Sent to approval")).catch((e: Error) => notify.error(errorText(e)));
   return (
     <Panel>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">

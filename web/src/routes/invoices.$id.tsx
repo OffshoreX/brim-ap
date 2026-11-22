@@ -14,7 +14,7 @@ import { Table, Th, Td } from "@/components/Table";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAction, useInvoice, useInvoiceProcessLog, useInvoiceTrail } from "@/hooks/queries";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, errorText } from "@/lib/api";
 import { can } from "@/lib/roles";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
@@ -29,7 +29,7 @@ export const Route = createFileRoute("/invoices/$id")({
 function InvoicePage({ me }: { me: Me }) {
   const { id } = Route.useParams();
   const q = useInvoice(id);
-  return <QueryView q={q}>{(inv) => <InvoiceView inv={inv} me={me} />}</QueryView>;
+  return <QueryView q={q} missing="That invoice doesn't exist or you can't see it.">{(inv) => <InvoiceView inv={inv} me={me} />}</QueryView>;
 }
 
 const words = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace(/[_.]/g, " ");
@@ -45,7 +45,7 @@ function InvoiceView({ inv, me }: { inv: InvoiceDetail; me: Me }) {
   const trail = useInvoiceTrail(id, showTrail);
   const plog = useInvoiceProcessLog(id);
   // Failures show the server's own sentence (for example "You are not the next approver for this invoice").
-  const run = (p: Promise<unknown>, ok: string, money = true) => p.then(() => (money ? notify.money(ok) : notify.info(ok))).catch((e: Error) => notify.error(e.message));
+  const run = (p: Promise<unknown>, ok: string, money = true) => p.then(() => (money ? notify.money(ok) : notify.info(ok))).catch((e: Error) => notify.error(errorText(e)));
 
   const hasError = inv.flags.some((f) => f.severity === "error");
   const vendor = inv.vendorName ?? (inv.vendorId === null ? "Unknown vendor" : `Vendor #${inv.vendorId}`);

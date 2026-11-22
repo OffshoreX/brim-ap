@@ -11,7 +11,7 @@ import { Table, Th, Td } from "@/components/Table";
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
 import { useAction, useReconciliation } from "@/hooks/queries";
-import { api, downloadUrl } from "@/lib/api";
+import { api, downloadUrl, errorText } from "@/lib/api";
 import { can } from "@/lib/roles";
 import { formatDate } from "@/lib/format";
 import { pageHead } from "@/lib/seo";
@@ -48,7 +48,7 @@ function ReconPage({ me }: { me: Me }) {
       <PageHeader title="Reconciliation" subtitle="Payments matched against bank and card statements."
         actions={<div className="flex gap-2">
           <Button variant="outline" asChild><a href={downloadUrl(`/reconciliation?format=csv${category ? `&category=${category}` : ""}`)} download><Download aria-hidden />CSV</a></Button>
-          {can(me.role, "runReconciliation") && <Button disabled={run.isPending} onClick={() => run.mutateAsync().then((r) => notify.info(`Reconciliation saved: ${r.changed} payment${r.changed === 1 ? "" : "s"} changed status`)).catch((e: Error) => notify.error(e.message))}>{run.isPending ? "Running…" : "Run reconciliation"}</Button>}
+          {can(me.role, "runReconciliation") && <Button disabled={run.isPending} onClick={() => run.mutateAsync().then((r) => notify.info(`Reconciliation saved: ${r.changed} payment${r.changed === 1 ? "" : "s"} changed status`)).catch((e: Error) => notify.error(errorText(e)))}>{run.isPending ? "Running…" : "Run reconciliation"}</Button>}
         </div>} />
       <QueryView q={q}>
         {(r) => (

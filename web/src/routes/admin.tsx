@@ -8,7 +8,7 @@ import { Table, Th, Td } from "@/components/Table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAction, useApprovalRules } from "@/hooks/queries";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { toCents } from "@/lib/format";
 import { can, ROLE_LABEL } from "@/lib/roles";
 import { pageHead } from "@/lib/seo";
@@ -48,7 +48,7 @@ function RuleRow({ r }: { r: ApprovalRule }) {
       <Td className="font-semibold">{r.policy_id ?? `Rule ${r.id}`}</Td>
       <Td><Input aria-label={`Threshold for ${r.policy_id ?? r.id}`} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={cents === null} className="num h-9 w-40 text-right" /></Td>
       <Td>{r.extra_role === "cfo" ? "CFO" : ROLE_LABEL[r.extra_role as Role] ?? r.extra_role}</Td>
-      <Td>{dirty && <Button disabled={cents === null || save.isPending} onClick={() => cents !== null && save.mutateAsync(cents).then(() => notify.info("Rule saved")).catch((e: Error) => { notify.error(e.message); setAmount((r.over_cents / 100).toFixed(2)); })}>{save.isPending ? "Saving…" : "Save"}</Button>}</Td>
+      <Td>{dirty && <Button disabled={cents === null || save.isPending} onClick={() => cents !== null && save.mutateAsync(cents).then(() => notify.info("Rule saved")).catch((e: Error) => { notify.error(errorText(e)); setAmount((r.over_cents / 100).toFixed(2)); })}>{save.isPending ? "Saving…" : "Save"}</Button>}</Td>
     </tr>
   );
 }

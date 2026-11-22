@@ -10,7 +10,7 @@ import { StatusPill } from "@/components/StatusPill";
 import { ProcessSteps } from "@/components/ProcessSteps";
 import { Button } from "@/components/ui/button";
 import { useInvoiceProcessLog } from "@/hooks/queries";
-import { api } from "@/lib/api";
+import { api, errorText } from "@/lib/api";
 import { can } from "@/lib/roles";
 import { pageHead } from "@/lib/seo";
 import { cn } from "@/lib/utils";
@@ -49,7 +49,7 @@ function UploadPage({ me }: { me: Me }) {
       const result = await api.upload(file);
       patch(row.key, { state: "done", invoiceId: result.invoiceId, result });
     } catch (e) {
-      patch(row.key, { state: "error", error: e instanceof Error ? e.message : String(e) });
+      patch(row.key, { state: "error", error: errorText(e) });
     } finally {
       clearInterval(timer);
       for (const k of ["invoices", "invoice-counts", "dashboard", "exceptions", "approvals"]) void qc.invalidateQueries({ queryKey: [k] });
@@ -121,7 +121,7 @@ function LiveSteps({ id, running }: { id: number; running: boolean }) {
   useEffect(() => { if (!running) void refetch(); }, [running, refetch]);
   return (
     <div className="mt-4 border-t border-border pt-3">
-      {log.error ? <p className="text-sm text-muted-foreground">{log.error.message}</p>
+      {log.error ? <p className="text-sm text-muted-foreground">{errorText(log.error)}</p>
         : log.data && log.data.length > 0 ? <ProcessSteps steps={log.data} />
         : <p className="text-sm text-muted-foreground">{running ? "Waiting for the first step…" : "No processing steps were recorded."}</p>}
     </div>
