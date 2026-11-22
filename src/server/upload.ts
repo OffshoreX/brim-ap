@@ -58,8 +58,9 @@ async function runPipeline(user: User, file: string, invoiceId: number): Promise
     const r = await processInvoice(invoiceId, user.id);
     return { file, invoiceId, status: r.status, flags: r.flags, error: null };
   } catch (e) {
-    // The invoice exists and stays where it got to, so nothing is lost; the clerk sees why.
-    return { file, invoiceId, ...snapshot(invoiceId), error: e instanceof Error ? e.message : "Processing failed" };
+    // The invoice exists and stays where it got to, so nothing is lost. The cause is only logged: it may carry SQL or paths.
+    console.error("Invoice processing failed:", e);
+    return { file, invoiceId, ...snapshot(invoiceId), error: "Processing failed. The invoice was saved; try again or ask an engineer." };
   }
 }
 
@@ -69,6 +70,7 @@ async function handleFile(user: User, file: string, bytes: Buffer): Promise<File
   try {
     reg = registerUpload(user, bytes);
   } catch (e) {
+    if (!(e instanceof UploadError)) console.error("Could not store upload:", e);
     return { file, invoiceId: null, status: "error", flags: [], error: e instanceof UploadError ? e.message : "Could not store the file" };
   }
   if (reg.isNew) {

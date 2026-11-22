@@ -1,16 +1,18 @@
 // The ONLY place roles are checked. Routes call requireRole; the UI never decides.
 import type { Role, User } from "@/contracts";
 import { getDb } from "./db";
+import { checkOrigin } from "./security";
 import { COOKIE_NAME, readCookie, verifySession } from "./session";
 
 export class HttpError extends Error {
-  constructor(public status: 401 | 403, message: string) {
+  constructor(public status: 401 | 403 | 429, message: string) {
     super(message);
   }
 }
 
 // Throws 401 (no/invalid cookie or unknown user) or 403 (role not allowed).
 export function requireRole(request: Request, allowedRoles: readonly Role[]): User {
+  checkOrigin(request); // a cross-site write is refused before anything else, signed in or not
   const id = verifySession(readCookie(request, COOKIE_NAME));
   if (id === null) throw new HttpError(401, "Not signed in");
   const user = getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as (User & { status?: string; password_hash?: string | null }) | undefined; // status is not in the contracts User type
@@ -22,12 +24,14 @@ export function requireRole(request: Request, allowedRoles: readonly Role[]): Us
 }
 
 // Turns a thrown HttpError into a JSON response; works for sync and async route code.
-// Anything else is a real bug, rethrow.
+// Anything else is a real bug: the details go to the server log only, the caller gets a plain 500
+// (no stack, SQL or file path).
 export async function handle(fn: () => Response | Promise<Response>): Promise<Response> {
   try {
     return await fn();
   } catch (e) {
     if (e instanceof HttpError) return Response.json({ error: e.message }, { status: e.status });
-    throw e;
+    console.error("API error:", e);
+    return Response.json({ error: "Something went wrong" }, { status: 500 });
   }
 }

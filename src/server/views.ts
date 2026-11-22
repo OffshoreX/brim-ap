@@ -112,6 +112,15 @@ export function invoiceDetail(user: User, id: number) {
     )
     .all(id)
     .map((p) => ({ ...(p as { method: string; status: string }), methodLabel: methodLabel((p as { method: string }).method), statusLabel: paymentStatusLabel((p as { status: string }).status) }));
+  // The latest clerk decision on a held invoice. The note lives in the audit row (written with the status change), so there is one copy.
+  const res = db
+    .prepare(
+      `SELECT a.at, a.after, u.name AS byName FROM audit_log a LEFT JOIN users u ON u.id = a.actor_id
+       WHERE a.entity = 'invoice' AND a.entity_id = ? AND a.action = 'exception.resolve' ORDER BY a.id DESC LIMIT 1`
+    )
+    .get(String(id)) as { at: string; after: string | null; byName: string | null } | undefined;
+  const after = res ? (parseJson(res.after) as { note?: string; action?: string } | null) : null;
+  const resolution = res ? { note: after?.note ?? "", byName: res.byName ?? "System", at: res.at, action: after?.action ?? "" } : null;
   return {
     id: inv.id,
     status: inv.status,
@@ -136,6 +145,7 @@ export function invoiceDetail(user: User, id: number) {
     approvalChain: chain,
     approvals,
     payments,
+    resolution,
   };
 }
 

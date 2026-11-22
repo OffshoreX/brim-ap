@@ -1,9 +1,17 @@
+import { handle } from "@/server/authz";
 import { getDb } from "@/server/db";
+import { checkOrigin } from "@/server/security";
 import { writeAudit } from "@/server/audit";
 import { attemptLogin, clientIp, personaPickerEnabled } from "@/server/login";
 import { sessionCookie } from "@/server/session";
 
-export async function POST(request: Request) {
+export const POST = (request: Request) =>
+  handle(() => {
+    checkOrigin(request); // login is public, so this is the only guard against a cross-site login
+    return login(request);
+  });
+
+async function login(request: Request) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "Expected a JSON object" }, { status: 400 });
 

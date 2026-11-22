@@ -83,3 +83,23 @@ test("rows carry vendor name, due date and flag count; unread rows get nulls; co
   expect(rows[0]).toMatchObject({ vendorName: "Acme Freight", dueDate: "2026-12-01", flagCount: 2, invoiceNumber: "A-1", totalCents: 500 });
   expect(rows[1]).toMatchObject({ vendorName: null, dueDate: null, flagCount: 0 });
 });
+
+// --- T84: counts parity. For every role the counts total equals the unfiltered list total, so a chip never disagrees with its table ---
+import { ROLES } from "@/contracts";
+
+test("for each of the six roles, /counts total equals X-Total-Count of the unfiltered list", async () => {
+  const statuses = ["received", "pending_approval", "needs_review", "paid", "pending_approval", "rejected"];
+  statuses.forEach((s, i) => addWith(1 + (i % 2), s)); // requesters 1 and 2 (both employees)
+  const userFor = (role: string) => (getDb().prepare("SELECT id FROM users WHERE role = ? ORDER BY id").get(role) as { id: number }).id;
+  expect(ROLES).toHaveLength(6);
+  const totals: Record<string, number> = {};
+  for (const role of ROLES) {
+    const u = userFor(role);
+    const listTotal = Number((await list(new Request("http://x/api/invoices", { headers: cookie(u) }))).headers.get("X-Total-Count"));
+    const c = await (await counts(new Request("http://x/api/invoices/counts", { headers: cookie(u) }))).json();
+    expect(c.total, role).toBe(listTotal);
+    totals[role] = listTotal;
+  }
+  // The scoped roles really are scoped (so the equality above is not trivially "everyone sees everything").
+  expect(totals).toMatchObject({ employee: 3, approver: 2, ap_clerk: 6, finance_manager: 6, controller_admin: 6, auditor: 6 });
+});
