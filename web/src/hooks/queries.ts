@@ -57,6 +57,8 @@ export const useAudit = (p: { limit: number; offset: number }) =>
 // GET /api/process-log?limit=
 export const useProcessLog = (limit: number, enabled = true) =>
   useQuery({ queryKey: ["process-log", limit], queryFn: () => api.processLog(limit), enabled });
+// GET /api/users (controller)
+export const useAdminUsers = () => useQuery({ queryKey: ["admin-users"], queryFn: api.adminUsers });
 // GET /api/admin/approval-rules
 export const useApprovalRules = () => useQuery({ queryKey: ["approval-rules"], queryFn: api.approvalRules });
 

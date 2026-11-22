@@ -1,24 +1,31 @@
+import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { QueryView, Empty, Forbidden } from "@/components/States";
 import { Table, Th, Td } from "@/components/Table";
 import { StatusPill } from "@/components/StatusPill";
+import { VendorForm } from "@/components/VendorForm";
+import { Button } from "@/components/ui/button";
 import { useVendors } from "@/hooks/queries";
 import { can } from "@/lib/roles";
 import { pageHead } from "@/lib/seo";
+import type { Me } from "@/lib/types";
 
 export const Route = createFileRoute("/vendors/")({
   ssr: false,
   head: () => pageHead("Vendors", "Harborline vendors, payment methods and bank change status."),
-  component: () => <AppShell>{(me) => (can(me.role, "vendors") ? <VendorsPage /> : <Forbidden />)}</AppShell>,
+  component: () => <AppShell>{(me) => (can(me.role, "vendors") ? <VendorsPage me={me} /> : <Forbidden />)}</AppShell>,
 });
 
-function VendorsPage() {
+function VendorsPage({ me }: { me: Me }) {
   const q = useVendors();
+  const [adding, setAdding] = useState(false);
   return (
     <>
-      <PageHeader title="Vendors" subtitle="Who Harborline pays and how." />
+      <PageHeader title="Vendors" subtitle="Who Harborline pays and how."
+        actions={can(me.role, "createVendor") && <Button onClick={() => setAdding(true)}>Add vendor</Button>} />
+      {can(me.role, "createVendor") && <VendorForm open={adding} onOpenChange={setAdding} />}
       <QueryView q={q}>
         {(vs) => vs.length === 0 ? <Empty title="No vendors yet" to="/upload" linkLabel="Upload an invoice">Vendors are created from invoices.</Empty> : (
           <Table>

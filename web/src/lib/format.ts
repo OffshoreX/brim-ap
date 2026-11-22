@@ -24,3 +24,5 @@ export function plural(n: number, word: string, pluralWord = `${word}s`): string
 export function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("");
 }
+// "10000.50" -> 1000050. Whole cents only, as text, so no float ever reaches the server.
+export const toCents = (t: string) => (/^\d{1,10}(\.\d{1,2})?$/.test(t.trim()) ? Math.round(Number(t) * 100) : null);

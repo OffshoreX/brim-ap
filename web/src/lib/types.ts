@@ -223,6 +223,22 @@ export interface Vendor {
   onboarded_at: string | null;
   currency: string;
   bank_account_last4: string;
+  // Who created the vendor (null for dataset vendors). Only used to hide Approve from the creator; the server enforces it.
+  created_by_user_id?: number | null;
+}
+// POST /api/vendors body (T80). Every field but name is optional; the server checks each one and names the field in its message.
+export interface NewVendor {
+  name: string;
+  category?: string;
+  province_or_state?: string;
+  country?: string;
+  gst_hst_number?: string;
+  qst_number?: string;
+  payment_terms_days?: number | string; // a text that is not a number is sent as is, so the server's own message comes back
+  preferred_payment_method?: string;
+  ap_contact_email?: string;
+  requires_po: boolean;
+  default_gl_account?: string;
 }
 // One row of vendor_bank_changes. status: pending (waiting for a callback), applied (verified) or rejected.
 export interface BankChange {
@@ -433,10 +449,26 @@ export interface UploadFileResult {
   error: string | null;
 }
 
-export interface AppUser {
-  id: string;
+// GET /api/users as controller or auditor -> { users: ManagedUser[] } (camelCase; the limit is integer cents, CAD).
+export const USER_STATUSES = ["active", "on_leave", "terminated"] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
+export interface ManagedUser {
+  id: number;
   name: string;
-  email: string;
+  email: string | null;
+  title: string | null;
   role: Role;
+  status: UserStatus;
+  managerId: number | null;
+  approvalLimitCents: number;
+  delegateUserId: number | null;
+}
+// PATCH /api/users/:id body: only the fields that changed, snake_case. The reply is the updated ManagedUser.
+export interface UserPatch {
+  role?: Role;
+  manager_id?: number | null;
+  approval_limit_cents?: number;
+  status?: UserStatus;
+  delegate_user_id?: number | null;
 }
 

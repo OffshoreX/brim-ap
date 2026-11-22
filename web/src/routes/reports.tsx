@@ -8,6 +8,7 @@ import { BarChart } from "@/components/BarChart";
 import { QueryView, Empty, Forbidden } from "@/components/States";
 import { Table, Th, Td } from "@/components/Table";
 import { Money } from "@/components/Money";
+import { JournalExport } from "@/components/JournalExport";
 import { Button } from "@/components/ui/button";
 import { useAging, useDiscounts, useSpend } from "@/hooks/queries";
 import { downloadUrl } from "@/lib/api";
@@ -50,6 +51,7 @@ function ReportsPage() {
           ) : <Empty title="No spend yet" />}</QueryView>
         </Panel>
       </div>
+      <JournalExport />
       <div className="mt-10 mb-3 flex items-center justify-between gap-3">
         <h2 className="text-xl font-bold">Early-payment discounts</h2>
         {csv("/reports/discounts?format=csv")}

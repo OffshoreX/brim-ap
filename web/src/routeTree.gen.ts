@@ -20,6 +20,7 @@ import { Route as PaymentsRouteImport } from './routes/payments'
 import { Route as ReconciliationRouteImport } from './routes/reconciliation'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as UploadRouteImport } from './routes/upload'
+import { Route as UsersRouteImport } from './routes/users'
 import { Route as InvoicesIndexRouteImport } from './routes/invoices.index'
 import { Route as InvoicesIdRouteImport } from './routes/invoices.$id'
 import { Route as VendorsIndexRouteImport } from './routes/vendors.index'
@@ -80,6 +81,11 @@ const UploadRoute = UploadRouteImport.update({
   path: '/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsersRoute = UsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InvoicesIndexRoute = InvoicesIndexRouteImport.update({
   id: '/invoices/',
   path: '/invoices/',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/reconciliation': typeof ReconciliationRoute
   '/reports': typeof ReportsRoute
   '/upload': typeof UploadRoute
+  '/users': typeof UsersRoute
   '/invoices/$id': typeof InvoicesIdRoute
   '/vendors/$id': typeof VendorsIdRoute
   '/invoices/': typeof InvoicesIndexRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/reconciliation': typeof ReconciliationRoute
   '/reports': typeof ReportsRoute
   '/upload': typeof UploadRoute
+  '/users': typeof UsersRoute
   '/invoices/$id': typeof InvoicesIdRoute
   '/vendors/$id': typeof VendorsIdRoute
   '/invoices': typeof InvoicesIndexRoute
@@ -148,6 +156,7 @@ export interface FileRoutesById {
   '/reconciliation': typeof ReconciliationRoute
   '/reports': typeof ReportsRoute
   '/upload': typeof UploadRoute
+  '/users': typeof UsersRoute
   '/invoices/$id': typeof InvoicesIdRoute
   '/vendors/$id': typeof VendorsIdRoute
   '/invoices/': typeof InvoicesIndexRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/reconciliation'
     | '/reports'
     | '/upload'
+    | '/users'
     | '/invoices/$id'
     | '/vendors/$id'
     | '/invoices/'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
     | '/reconciliation'
     | '/reports'
     | '/upload'
+    | '/users'
     | '/invoices/$id'
     | '/vendors/$id'
     | '/invoices'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
     | '/reconciliation'
     | '/reports'
     | '/upload'
+    | '/users'
     | '/invoices/$id'
     | '/vendors/$id'
     | '/invoices/'
@@ -219,6 +231,7 @@ export interface RootRouteChildren {
   ReconciliationRoute: typeof ReconciliationRoute
   ReportsRoute: typeof ReportsRoute
   UploadRoute: typeof UploadRoute
+  UsersRoute: typeof UsersRoute
   InvoicesIdRoute: typeof InvoicesIdRoute
   VendorsIdRoute: typeof VendorsIdRoute
   InvoicesIndexRoute: typeof InvoicesIndexRoute
@@ -304,6 +317,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UploadRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/users': {
+      id: '/users'
+      path: '/users'
+      fullPath: '/users'
+      preLoaderRoute: typeof UsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/invoices/': {
       id: '/invoices/'
       path: '/invoices'
@@ -347,6 +367,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReconciliationRoute: ReconciliationRoute,
   ReportsRoute: ReportsRoute,
   UploadRoute: UploadRoute,
+  UsersRoute: UsersRoute,
   InvoicesIdRoute: InvoicesIdRoute,
   VendorsIdRoute: VendorsIdRoute,
   InvoicesIndexRoute: InvoicesIndexRoute,
