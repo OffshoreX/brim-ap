@@ -1,4 +1,5 @@
 // Data hooks. Each comment names the endpoint it calls. All fetching is client-side (TanStack Query).
+import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -19,19 +20,22 @@ export const useInvoiceTrail = (id: string, enabled: boolean) =>
 // GET /api/invoices/:id/process-log (optionally polled)
 export const useInvoiceProcessLog = (id: string | null, pollMs: number | false = false) =>
   useQuery({ queryKey: ["invoice", id, "process-log"], queryFn: () => api.invoiceProcessLog(id!), enabled: !!id, refetchInterval: pollMs, retry: false });
+// The next six lists are paged by the server: pass { limit, offset }; the result is { items, total } (total = X-Total-Count).
+// placeholderData keeps the old page on screen while the next one loads.
+type Page = { limit: number; offset: number };
 // GET /api/approvals/inbox
-export const useApprovalsInbox = () => useQuery({ queryKey: ["approvals"], queryFn: api.approvalsInbox });
+export const useApprovalsInbox = (p: Page) => useQuery({ queryKey: ["approvals", p], queryFn: () => api.approvalsInbox(p), placeholderData: (prev) => prev });
 // GET /api/exceptions
-export const useExceptions = () => useQuery({ queryKey: ["exceptions"], queryFn: api.exceptions });
+export const useExceptions = (p: Page, enabled = true) => useQuery({ queryKey: ["exceptions", "open", p], queryFn: () => api.exceptions(p), enabled, placeholderData: (prev) => prev });
 // GET /api/exceptions/historical
-export const useHistoricalExceptions = (enabled: boolean) =>
-  useQuery({ queryKey: ["exceptions", "historical"], queryFn: api.historicalExceptions, enabled });
+export const useHistoricalExceptions = (p: Page, enabled = true) =>
+  useQuery({ queryKey: ["exceptions", "historical", p], queryFn: () => api.historicalExceptions(p), enabled, placeholderData: (prev) => prev });
 // GET /api/inbox/other
-export const useOtherInbox = (enabled: boolean) => useQuery({ queryKey: ["inbox-other"], queryFn: api.otherInbox, enabled });
+export const useOtherInbox = (p: Page, enabled = true) => useQuery({ queryKey: ["inbox-other", p], queryFn: () => api.otherInbox(p), enabled, placeholderData: (prev) => prev });
 // GET /api/payments
-export const usePayments = () => useQuery({ queryKey: ["payments"], queryFn: api.payments });
+export const usePayments = (p: Page) => useQuery({ queryKey: ["payments", "all", p], queryFn: () => api.payments(p), placeholderData: (prev) => prev });
 // GET /api/payments/ready
-export const useReadyToPay = (enabled: boolean) => useQuery({ queryKey: ["payments", "ready"], queryFn: api.readyToPay, enabled });
+export const useReadyToPay = (p: Page, enabled = true) => useQuery({ queryKey: ["payments", "ready", p], queryFn: () => api.readyToPay(p), enabled, placeholderData: (prev) => prev });
 // GET /api/reconciliation
 export const useReconciliation = () => useQuery({ queryKey: ["reconciliation"], queryFn: api.reconciliation });
 // GET /api/reports/aging
@@ -52,13 +56,26 @@ export const useProcessLog = (limit: number, enabled = true) =>
 // GET /api/admin/approval-rules
 export const useApprovalRules = () => useQuery({ queryKey: ["approval-rules"], queryFn: api.approvalRules });
 
-/** Mutation helper: runs fn, then invalidates the listed query keys. */
-export function useAction<A>(fn: (a: A) => Promise<unknown>, invalidate: string[][]) {
+/** Mutation helper: runs fn, then invalidates the listed query keys.
+ *  Only one call runs at a time: isPending only turns true after React re-renders, so two clicks in the same tick would both
+ *  get through. The ref flips at once; a second call while one is running does nothing (its promise never settles, so its
+ *  .then toast never shows). The server is still the real guard: it answers a repeat with 409. */
+export function useAction<A, R = unknown>(fn: (a: A) => Promise<R>, invalidate: string[][]) {
   const qc = useQueryClient();
-  return useMutation({
+  const busy = useRef(false);
+  const m = useMutation({
     mutationFn: fn,
     onSuccess: () => {
       for (const k of invalidate) void qc.invalidateQueries({ queryKey: k });
     },
+    onSettled: () => {
+      busy.current = false;
+    },
   });
+  const mutateAsync = (a: A): Promise<R> => {
+    if (busy.current) return new Promise<R>(() => undefined);
+    busy.current = true;
+    return m.mutateAsync(a);
+  };
+  return { ...m, mutateAsync };
 }

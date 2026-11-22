@@ -185,67 +185,159 @@ export interface SpendReport {
   rows: SpendRow[];
 }
 
-// ---------- 2. Not yet checked against the server (owned by the tickets for those pages) ----------
+// ---------- 1b. Approvals, exceptions, payments, upload (verified by calling each endpoint as each role) ----------
 
-export interface InvoiceSummary {
-  id: string;
+// GET /api/approvals/inbox -> X-Total-Count + rows for the invoices where the caller is the next approver.
+// There is no flags array here, only the worst flag (topFlag) and a count. role is the raw step role (for example dept_manager).
+export interface InboxItem {
+  invoiceId: number;
+  stepNo: number;
+  role: string;
+  reason: string;
+  delegatedFromId: number | null;
   invoiceNumber: string;
-  vendorId: string;
-  vendorName: string;
-  invoiceDate: string;
-  dueDate: string;
-  status: string;
+  vendorId: number | null;
+  vendorName: string | null;
   totalCents: number;
   currency: string;
-  flagCount?: number;
-}
-
-export interface InboxItem extends InvoiceSummary {
+  invoiceDate: string;
+  dueDate: string | null;
+  totalCadCents: number | null;
   ageDays: number;
-  flags: Flag[];
-  whyYou: string;
+  flagCount: number;
+  topFlag: Flag | null;
 }
 
-export interface ExceptionItem {
-  id: string;
-  invoice: InvoiceSummary;
-  flags: Flag[];
-  createdAt: string;
+// POST /api/invoices/:id/decision
+export interface DecisionResult {
+  invoiceId: number;
+  status: InvoiceStatus;
+  decision: "approved" | "rejected";
+  stepNo: number;
+  nextApproverId: number | null;
+  delegated: boolean;
+  delegatedFromId: number | null;
 }
 
-export interface HistoricalException {
-  id: string;
+// GET /api/exceptions rows (invoices in needs_review). The flags have no severity and there is no vendor name or due date.
+export interface ExceptionListItem {
+  id: number;
   invoiceNumber: string;
-  vendorName: string;
-  resolution: "sent_to_approval" | "rejected";
-  resolvedBy: string;
-  resolvedAt: string;
-  note: string | null;
+  vendorId: number | null;
+  totalCents: number;
+  currency: string;
+  flags: { code: string; message: string }[];
+}
+// What the Exceptions page shows: the row plus vendor name, due date and flags with severity, taken from the invoice detail.
+export interface ExceptionRow {
+  id: number;
+  invoiceNumber: string;
+  vendorId: number | null;
+  vendorName: string | null;
+  dueDate: string | null;
+  totalCents: number;
+  currency: string;
+  flags: Flag[];
+}
+// POST /api/exceptions/:id/resolve
+export interface ResolveResult {
+  invoiceId: number;
+  status: "pending_approval" | "rejected";
 }
 
+// GET /api/exceptions/historical: anomalies found in past invoices. Read-only; nobody can act on them.
+export interface HistoricalException {
+  invoiceId: number;
+  invoiceRef: string;
+  paymentId: number | null;
+  code: string;
+  label: string;
+  reason: string;
+  readOnly: true;
+}
+
+// GET /api/inbox/other: mail that did not become an invoice by itself (statements, questions, odd attachments).
 export interface OtherInboxEmail {
-  id: string;
+  emailId: string;
   from: string;
   subject: string;
   receivedAt: string;
-  reason: string;
+  class: string;
+  reason: string | null;
+  attachments: string[];
+  flags: string[];
+}
+// POST /api/inbox/import answers one row per email. invoiceIds is empty when the email was skipped (skipped says why).
+export interface ImportRow {
+  emailId: string;
+  class: string;
+  invoiceIds: number[];
+  flags: string[];
+  skipped?: string;
 }
 
-export interface Payment {
-  id: string;
-  invoiceId: string;
+// GET /api/payments/ready: approved invoices with no payment yet. suggestedMethod is the server's pick and its reason.
+export interface ReadyToPay {
+  invoiceId: number;
   invoiceNumber: string;
-  vendorName: string;
+  vendorName: string | null;
+  totalCents: number;
+  currency: string;
+  dueDate: string | null;
+  suggestedMethod: { method: string; label: string; reason: string };
+  earlyPayDiscountCents: number | null;
+}
+// POST /api/payments/prepare
+export interface PrepareResult {
+  paymentId: number;
+  invoiceId: number;
+  status: "scheduled";
+  method: string;
+  scheduledDate: string;
+  earlyPay: boolean;
+  notes: string[];
+}
+
+// GET /api/payments (all payments, oldest first by id, so a payment prepared today is on the last page). status is scheduled | settled | outstanding (a cheque not yet cashed);
+// method is EFT | CARD | CHEQUE. methodLabel and statusLabel are the server's words for them.
+export interface Payment {
+  id: number;
+  invoiceId: number;
+  invoiceNumber: string;
+  vendorId: number | null;
+  vendorName: string | null;
+  invoiceTotalCents: number;
+  method: string;
+  status: string;
+  scheduledDate: string | null;
+  paidAt: string | null;
   amountCents: number;
   currency: string;
-  method: "eft" | "cheque";
-  status: "prepared" | "scheduled" | "released" | "settled" | "failed";
-  scheduledFor: string | null;
+  reference: string | null;
+  methodLabel: string;
+  statusLabel: string;
+}
+// POST /api/payments/release
+export interface ReleaseResult {
+  paymentId: number;
+  invoiceId: number;
+  status: "paid";
+  method: string;
+  reference: string;
+  discountCents: number;
 }
 
-export interface ReadyToPay extends InvoiceSummary {
-  method: "eft" | "cheque";
+// POST /api/invoices/upload answers only when every file has been through the whole pipeline. A file the server refuses
+// comes back inside a 200 as { invoiceId: null, status: "error", error }, so callers must read error, not just the HTTP status.
+export interface UploadFileResult {
+  file: string;
+  invoiceId: number | null;
+  status: string;
+  flags: Flag[];
+  error: string | null;
 }
+
+// ---------- 2. Not yet checked against the server (owned by the tickets for those pages) ----------
 
 export interface Reconciliation {
   periodLabel: string;
