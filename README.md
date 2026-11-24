@@ -4,23 +4,22 @@ Accounts payable automation for Harborline Logistics on the Brim business card p
 
 Built solo for McGill CodeJam 16 (November 20 to 22, 2026). **Honorable mention, Brim track.**
 
-![The sidebar for each of the six roles](docs/images/sidebars.jpg)
+![Controller home page](docs/images/home.jpg)
+*The controller's home page: invoice counts by status, payments due this week, and a live feed of every processing step, each with its result in plain words.*
+
+![Invoice detail page](docs/images/invoice.jpg)
+*One invoice on one page: the flag and its reason, the approve or reject decision, line items with their GL coding, the approval chain showing who it is waiting for, and how the invoice was processed step by step.*
 
 ## Screenshots
 
-Each role sees only what it needs, and the server enforces it: an employee who opens the Approvals page by address gets refused, by the page and by the API.
+![The sidebar for each of the six roles](docs/images/sidebars.jpg)
+*Six roles, six views. Each role sees only the pages it needs, from the employee's three to the controller's thirteen. The auditor can read everything and change nothing.*
 
 ![Employee blocked from the Approvals page](docs/images/blocked.jpg)
-
-The controller manages approval tiers and users, but cannot edit the tier that applies to their own role or their own user record.
-
-![Approval rules](docs/images/rules.jpg)
-
-![User and role management](docs/images/users.jpg)
-
-Every action lands in an append-only audit log. Each row stores a hash of the row before it, so any edit to history breaks the chain, and one click re-checks it.
+*The server decides. An employee who opens the Approvals page by typing its address is refused by the page and by the API. Hiding a button is only for looks.*
 
 ![Audit log with the chain verified](docs/images/audit.jpg)
+*Every action lands in an append-only audit log. Each row stores a hash of the row before it, so editing history breaks the chain, and Verify chain re-checks it in one click.*
 
 ## Run it
 
