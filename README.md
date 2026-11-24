@@ -2,7 +2,25 @@
 
 Accounts payable automation for Harborline Logistics on the Brim business card platform. An invoice goes in, is read, coded, checked, approved, paid (simulated) and audited, with every step explained in plain words and recorded.
 
-Built for McGill CodeJam 16, Brim track.
+Built solo for McGill CodeJam 16 (November 20 to 22, 2026). **Honorable mention, Brim track.**
+
+![The sidebar for each of the six roles](docs/images/sidebars.jpg)
+
+## Screenshots
+
+Each role sees only what it needs, and the server enforces it: an employee who opens the Approvals page by address gets refused, by the page and by the API.
+
+![Employee blocked from the Approvals page](docs/images/blocked.jpg)
+
+The controller manages approval tiers and users, but cannot edit the tier that applies to their own role or their own user record.
+
+![Approval rules](docs/images/rules.jpg)
+
+![User and role management](docs/images/users.jpg)
+
+Every action lands in an append-only audit log. Each row stores a hash of the row before it, so any edit to history breaks the chain, and one click re-checks it.
+
+![Audit log with the chain verified](docs/images/audit.jpg)
 
 ## Run it
 
